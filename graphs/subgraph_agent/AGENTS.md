@@ -1,73 +1,73 @@
-# Subgraph Agent (서브그래프 에이전트)
+# Subgraph Agent
 
-## 개요
+## Overview
 
-**Subgraph Agent**는 기존 LangGraph 그래프를 노드로 재사용하는 서브그래프 구성(composition) 패턴을 보여주는 예제입니다. 이 패턴을 통해 복잡한 에이전트 시스템을 모듈화된 구조로 구축할 수 있으며, 기존 그래프를 새로운 워크플로우의 일부로 통합할 수 있습니다.
+The **Subgraph Agent** is an example that demonstrates the subgraph composition pattern, where an existing LangGraph graph is reused as a node. This pattern allows you to build complex agent systems with a modular structure, integrating existing graphs into new workflows.
 
-### 서브그래프 패턴의 장점
+### Advantages of the Subgraph Pattern
 
-- **재사용성**: 기존 그래프(`react_agent`)를 노드로 삽입하여 재사용
-- **모듈성**: 복잡한 로직을 독립적인 서브그래프로 분리
-- **유지보수성**: 각 서브그래프를 독립적으로 개발 및 테스트 가능
-- **구성 가능성**: 여러 서브그래프를 조합하여 복잡한 워크플로우 구축
+- **Reusability**: Reuse an existing graph (`react_agent`) by inserting it as a node.
+- **Modularity**: Separate complex logic into independent subgraphs.
+- **Maintainability**: Develop and test each subgraph independently.
+- **Composability**: Combine multiple subgraphs to build complex workflows.
 
-### 그래프 구조
+### Graph Structure
 
 ```
 __start__ → no_stream → subgraph_agent → __end__
 ```
 
-메인 그래프는 전처리 노드(`no_stream`)를 거쳐 서브그래프(`react_agent`)를 실행하고 최종 결과를 반환하는 선형 구조입니다.
+The main graph has a linear structure that goes through a preprocessing node (`no_stream`), executes the subgraph (`react_agent`), and returns the final result.
 
-## 파일 구조
+## File Structure
 
 ### 1. `__init__.py`
 
-모듈 진입점으로 `graph` 객체를 export합니다.
+The module entry point that exports the `graph` object.
 
-**주요 내용:**
-- 서브그래프 구성 패턴 개요
-- `subgraph_agent` 노드 - `react_agent` 그래프를 서브그래프로 실행
-- `no_stream` 노드 - 스트리밍 비활성화 태그를 사용한 LLM 호출
+**Key Contents:**
+- Overview of the subgraph composition pattern.
+- `subgraph_agent` node - Executes the `react_agent` graph as a subgraph.
+- `no_stream` node - LLM call using a streaming deactivation tag.
 
 ### 2. `graph.py`
 
-서브그래프를 포함하는 메인 그래프를 정의합니다.
+Defines the main graph that includes the subgraph.
 
-**주요 구성 요소:**
+**Key Components:**
 
-#### 노드 함수
+#### Node Functions
 
 **`no_stream(state, runtime)`**
-- `langsmith:nostream` 태그와 함께 LLM을 호출하는 전처리 노드
-- 서브그래프로 전달하기 전에 초기 응답 생성
-- LangSmith 추적에서 스트리밍 없이 전체 응답을 한 번에 기록
+- A preprocessing node that calls the LLM with the `langsmith:nostream` tag.
+- Generates an initial response before passing it to the subgraph.
+- Records the entire response at once in LangSmith tracing, without streaming.
 
-**동작 흐름:**
-1. Runtime Context에서 모델 설정 및 시스템 프롬프트 로드
-2. `langsmith:nostream` 태그와 함께 채팅 모델 초기화
-3. 현재 UTC 시각을 시스템 프롬프트에 포맷팅
-4. 시스템 메시지와 대화 이력을 결합하여 LLM 호출
-5. LLM 응답을 메시지 목록에 추가하여 반환
+**Operational Flow:**
+1. Load model settings and system prompt from the Runtime Context.
+2. Initialize the chat model with the `langsmith:nostream` tag.
+3. Format the current UTC time into the system prompt.
+4. Call the LLM by combining the system message and conversation history.
+5. Add the LLM response to the message list and return it.
 
-**`subgraph_agent` 노드**
-- `react_agent.graph`를 직접 노드로 추가
-- LangGraph는 컴파일된 그래프를 노드로 사용 가능
-- 서브그래프는 메인 그래프의 상태를 받아 실행 후 업데이트된 상태를 반환
+**`subgraph_agent` Node**
+- Adds `react_agent.graph` directly as a node.
+- LangGraph allows compiled graphs to be used as nodes.
+- The subgraph receives the state from the main graph, executes, and returns the updated state.
 
-#### 그래프 빌더
+#### Graph Builder
 
 ```python
 builder = StateGraph(State, input_schema=InputState, context_schema=Context)
 ```
 
-`react_agent`와 동일한 `State`, `InputState`, `Context`를 사용하여 서브그래프와 메인 그래프 간의 원활한 데이터 흐름을 보장합니다.
+It uses the same `State`, `InputState`, and `Context` as `react_agent` to ensure seamless data flow between the subgraph and the main graph.
 
-## 서브그래프 통합 방식
+## Subgraph Integration Method
 
-### 1. 동일한 State 구조 사용
+### 1. Using the Same State Structure
 
-메인 그래프와 서브그래프는 동일한 `State`, `InputState`, `Context`를 공유합니다:
+The main graph and the subgraph share the same `State`, `InputState`, and `Context`:
 
 ```python
 from react_agent.context import Context
@@ -75,55 +75,55 @@ from react_agent.state import InputState, State
 from react_agent import graph as react_graph
 ```
 
-이를 통해 상태 전달 시 변환 없이 직접 데이터가 흐를 수 있습니다.
+This allows data to flow directly without transformation when passing the state.
 
-### 2. 서브그래프 노드 추가
+### 2. Adding the Subgraph Node
 
-컴파일된 그래프를 노드로 직접 추가:
+Add the compiled graph directly as a node:
 
 ```python
 builder.add_node("subgraph_agent", react_graph)
 ```
 
-LangGraph는 서브그래프를 일반 노드처럼 처리하며, 메인 그래프의 상태를 입력으로 전달하고 업데이트된 상태를 반환받습니다.
+LangGraph treats the subgraph like a regular node, passing the main graph's state as input and receiving the updated state as output.
 
-### 3. 엣지 연결
+### 3. Connecting Edges
 
 ```python
-builder.add_edge("__start__", "no_stream")      # 시작 → 전처리
-builder.add_edge("no_stream", "subgraph_agent") # 전처리 → 서브그래프
-builder.add_edge("subgraph_agent", "__end__")   # 서브그래프 → 종료
+builder.add_edge("__start__", "no_stream")      # Start → Preprocessing
+builder.add_edge("no_stream", "subgraph_agent") # Preprocessing → Subgraph
+builder.add_edge("subgraph_agent", "__end__")   # Subgraph → End
 ```
 
-## 데이터 흐름
+## Data Flow
 
-### State 공유 패턴
+### State Sharing Pattern
 
 ```
-1. 입력 메시지 → InputState
-2. no_stream 노드 실행
-   - 시스템 프롬프트 + 메시지 이력 → LLM 호출
-   - AIMessage 추가 → State 업데이트
-3. 업데이트된 State → subgraph_agent (react_agent 그래프)
-   - react_agent의 ReAct 사이클 실행
-   - 도구 호출 및 추론 반복
-   - 최종 AIMessage 생성
-4. 최종 State → __end__
+1. Input Message → InputState
+2. Execute no_stream node
+   - System Prompt + Message History → LLM Call
+   - Add AIMessage → Update State
+3. Updated State → subgraph_agent (react_agent graph)
+   - Execute react_agent's ReAct cycle
+   - Repeat tool calls and inference
+   - Generate final AIMessage
+4. Final State → __end__
 ```
 
-### Runtime Context 전달
+### Runtime Context Passing
 
-메인 그래프와 서브그래프 모두 동일한 `Runtime[Context]`를 공유:
+The main graph and the subgraph both share the same `Runtime[Context]`:
 
-- **모델 설정**: `runtime.context.model`
-- **시스템 프롬프트**: `runtime.context.system_prompt`
-- **검색 결과 제한**: `runtime.context.max_search_results`
+- **Model Settings**: `runtime.context.model`
+- **System Prompt**: `runtime.context.system_prompt`
+- **Search Result Limit**: `runtime.context.max_search_results`
 
-## 스트리밍 제어
+## Streaming Control
 
-### langsmith:nostream 태그
+### langsmith:nostream Tag
 
-`no_stream` 노드는 `langsmith:nostream` 태그를 사용하여 특정 LLM 호출의 스트리밍을 비활성화합니다:
+The `no_stream` node uses the `langsmith:nostream` tag to disable streaming for a specific LLM call:
 
 ```python
 model = load_chat_model(runtime.context.model).with_config(
@@ -131,16 +131,16 @@ model = load_chat_model(runtime.context.model).with_config(
 )
 ```
 
-**효과:**
-- LangSmith 대시보드에서 스트리밍 이벤트 없이 완료된 응답만 표시
-- 클라이언트는 해당 노드의 중간 이벤트를 받지 않음
-- 서브그래프 실행 전 초기 컨텍스트 설정에 유용
+**Effect:**
+- The LangSmith dashboard shows only the completed response without streaming events.
+- The client does not receive intermediate events from that node.
+- Useful for setting initial context before subgraph execution.
 
-### 서브그래프 스트리밍
+### Subgraph Streaming
 
-API 호출 시 `stream_subgraphs` 파라미터로 제어:
+Controlled by the `stream_subgraphs` parameter in the API call:
 
-**기본 동작 (stream_subgraphs=False):**
+**Default Behavior (stream_subgraphs=False):**
 ```python
 stream = client.runs.stream(
     thread_id=thread_id,
@@ -149,67 +149,67 @@ stream = client.runs.stream(
     stream_mode=["messages", "values"]
 )
 ```
-- `subgraph_agent` 노드의 이벤트만 수신
-- 서브그래프 내부 노드(`call_model`, `tools`)는 스트리밍되지 않음
+- Only events from the `subgraph_agent` node are received.
+- Internal subgraph nodes (`call_model`, `tools`) are not streamed.
 
-**서브그래프 스트리밍 활성화 (stream_subgraphs=True):**
+**Enable Subgraph Streaming (stream_subgraphs=True):**
 ```python
 stream = client.runs.stream(
     thread_id=thread_id,
     assistant_id=assistant_id,
     input={"messages": [...]},
     stream_mode=["messages", "values"],
-    stream_subgraphs=True  # 서브그래프 내부 이벤트도 스트리밍
+    stream_subgraphs=True  # Also stream internal subgraph events
 )
 ```
-- 서브그래프의 모든 노드 이벤트 수신 가능
-- `call_model`, `tools` 등 내부 노드의 실행 과정 추적 가능
+- All node events from the subgraph can be received.
+- Allows tracking the execution process of internal nodes like `call_model` and `tools`.
 
-## 커스터마이징 가이드
+## Customization Guide
 
-### 1. 다른 서브그래프 사용
+### 1. Using a Different Subgraph
 
-`react_agent` 대신 다른 그래프를 사용하려면:
+To use a different graph instead of `react_agent`:
 
 ```python
-# 다른 그래프 임포트
+# Import another graph
 from other_agent import graph as other_graph
 
-# 노드로 추가
+# Add it as a node
 builder.add_node("my_subgraph", other_graph)
 ```
 
-**주의사항:**
-- 서브그래프와 메인 그래프의 State 구조가 호환되어야 함
-- 필요시 State 변환 노드 추가
+**Note:**
+- The State structure of the subgraph and the main graph must be compatible.
+- Add a State transformation node if necessary.
 
-### 2. 전처리 노드 커스터마이징
+### 2. Customizing the Preprocessing Node
 
-`no_stream` 노드를 수정하여 다른 전처리 로직 추가:
+Modify the `no_stream` node to add other preprocessing logic:
 
 ```python
 async def custom_preprocessing(
     state: State, runtime: Runtime[Context]
 ) -> dict[str, list[AIMessage]]:
-    # 커스텀 전처리 로직
-    # 예: 입력 검증, 데이터 변환, 외부 API 호출 등
+    # Custom preprocessing logic
+    # e.g., input validation, data transformation, external API calls, etc.
 
     model = load_chat_model(runtime.context.model)
-    # ... 커스텀 로직
+    # ... custom logic
     return {"messages": [response]}
 
 builder.add_node("preprocessing", custom_preprocessing)
 ```
 
-### 3. 후처리 노드 추가
+### 3. Adding a Postprocessing Node
 
-서브그래프 실행 후 추가 처리가 필요한 경우:
+If additional processing is needed after the subgraph executes:
 
 ```python
 async def postprocessing(state: State) -> dict:
-    # 서브그래프 결과 후처리
+    # Postprocess the subgraph result
     last_message = state.messages[-1]
-    # ... 후처리 로직
+    # ... postprocessing logic
     return {"messages": [...]}
 
 builder.add_node("postprocessing", postprocessing)
@@ -217,9 +217,9 @@ builder.add_edge("subgraph_agent", "postprocessing")
 builder.add_edge("postprocessing", "__end__")
 ```
 
-### 4. 여러 서브그래프 조합
+### 4. Combining Multiple Subgraphs
 
-복잡한 워크플로우를 위해 여러 서브그래프를 순차 또는 병렬로 실행:
+Execute multiple subgraphs sequentially or in parallel for complex workflows:
 
 ```python
 from react_agent import graph as react_graph
@@ -228,12 +228,12 @@ from another_agent import graph as another_graph
 builder.add_node("agent1", react_graph)
 builder.add_node("agent2", another_graph)
 
-# 순차 실행
+# Sequential execution
 builder.add_edge("agent1", "agent2")
 
-# 또는 조건부 분기
+# Or conditional branching
 def route_to_agent(state: State) -> str:
-    # 상태에 따라 다른 서브그래프 선택
+    # Choose a different subgraph based on the state
     if needs_react_agent(state):
         return "agent1"
     return "agent2"
@@ -241,14 +241,14 @@ def route_to_agent(state: State) -> str:
 builder.add_conditional_edges("preprocessing", route_to_agent)
 ```
 
-## 사용 예제
+## Usage Examples
 
-### 1. 기본 실행
+### 1. Basic Execution
 
 ```python
 from subgraph_agent import graph
 
-# 서브그래프를 포함한 복합 그래프 실행
+# Execute the composite graph including the subgraph
 result = await graph.ainvoke({
     "messages": [
         {"role": "user", "content": "What's the weather like?"}
@@ -258,21 +258,21 @@ result = await graph.ainvoke({
 print(result["messages"][-1].content)
 ```
 
-### 2. API를 통한 실행
+### 2. Execution via API
 
-open_langgraph.json에 등록된 그래프로 실행:
+Execute the graph registered in `open_langgraph.json`:
 
 ```python
-# Assistant 생성
+# Create Assistant
 assistant = await client.assistants.create(
     graph_id="subgraph_agent",
     if_exists="do_nothing"
 )
 
-# Thread 생성
+# Create Thread
 thread = await client.threads.create()
 
-# Run 생성 및 스트리밍
+# Create and stream Run
 stream = client.runs.stream(
     thread_id=thread["thread_id"],
     assistant_id=assistant["assistant_id"],
@@ -288,9 +288,9 @@ async for chunk in stream:
     print(chunk)
 ```
 
-### 3. 서브그래프 내부 스트리밍
+### 3. Internal Subgraph Streaming
 
-서브그래프의 세부 실행 과정을 확인:
+Check the detailed execution process of the subgraph:
 
 ```python
 stream = client.runs.stream(
@@ -302,28 +302,28 @@ stream = client.runs.stream(
         ]
     },
     stream_mode=["messages", "values"],
-    stream_subgraphs=True  # 서브그래프 내부 이벤트 포함
+    stream_subgraphs=True  # Include internal subgraph events
 )
 
 langgraph_node_counts = {}
 
 async for chunk in stream:
-    # 이벤트의 langgraph_node 추적
+    # Track the langgraph_node of the event
     if hasattr(chunk, 'langgraph_node'):
         node = chunk.langgraph_node
         langgraph_node_counts[node] = langgraph_node_counts.get(node, 0) + 1
 
-# stream_subgraphs=True일 때: call_model, tools 이벤트 수신
-# stream_subgraphs=False일 때: subgraph_agent 이벤트만 수신
+# With stream_subgraphs=True: receive call_model, tools events
+# With stream_subgraphs=False: receive only subgraph_agent events
 print(langgraph_node_counts)
 ```
 
-### 4. Runtime Context 커스터마이징
+### 4. Customizing Runtime Context
 
 ```python
 from react_agent.context import Context
 
-# 커스텀 컨텍스트로 실행
+# Execute with a custom context
 custom_context = Context(
     model="anthropic/claude-3-5-sonnet-20241022",
     system_prompt="You are a helpful assistant specializing in weather.",
@@ -336,9 +336,9 @@ result = await graph.ainvoke(
 )
 ```
 
-## 구현 세부사항
+## Implementation Details
 
-### State 구조 (`react_agent.state`)
+### State Structure (`react_agent.state`)
 
 ```python
 @dataclass
@@ -350,10 +350,10 @@ class State(InputState):
     is_last_step: IsLastStep = field(default=False)
 ```
 
-- **messages**: `add_messages` 리듀서로 관리되는 대화 이력
-- **is_last_step**: LangGraph가 관리하는 재귀 제한 플래그
+- **messages**: Conversation history managed by the `add_messages` reducer.
+- **is_last_step**: Recursion limit flag managed by LangGraph.
 
-### Context 구조 (`react_agent.context`)
+### Context Structure (`react_agent.context`)
 
 ```python
 @dataclass(kw_only=True)
@@ -363,44 +363,44 @@ class Context:
     max_search_results: int = field(default=10)
 ```
 
-환경 변수로 오버라이드 가능:
+Can be overridden by environment variables:
 - `SYSTEM_PROMPT`
 - `MODEL`
 - `MAX_SEARCH_RESULTS`
 
-### 서브그래프 실행 메커니즘
+### Subgraph Execution Mechanism
 
-LangGraph는 서브그래프를 다음과 같이 처리합니다:
+LangGraph processes the subgraph as follows:
 
-1. 메인 그래프가 `subgraph_agent` 노드 도달
-2. 현재 State를 서브그래프의 입력으로 전달
-3. 서브그래프(`react_agent`)가 독립적으로 실행:
-   - ReAct 사이클 수행
-   - 도구 호출 및 LLM 추론 반복
-   - 최종 AIMessage 생성
-4. 서브그래프의 출력 State를 메인 그래프로 반환
-5. 메인 그래프가 다음 노드로 진행 (이 경우 `__end__`)
+1. The main graph reaches the `subgraph_agent` node.
+2. The current State is passed as input to the subgraph.
+3. The subgraph (`react_agent`) executes independently:
+   - Performs the ReAct cycle.
+   - Repeats tool calls and LLM inference.
+   - Generates a final AIMessage.
+4. The output State of the subgraph is returned to the main graph.
+5. The main graph proceeds to the next node (in this case, `__end__`).
 
-## 테스트
+## Testing
 
-서브그래프 동작을 검증하는 E2E 테스트:
+E2E tests to verify subgraph behavior:
 
-### 1. 이벤트 필터링 테스트
+### 1. Event Filtering Test
 
 `tests/e2e/test_streaming/test_event_filtering_and_subgraphs.py::test_langsmith_nostream_event_filtering_e2e`
 
-- `langsmith:nostream` 태그가 적용된 `no_stream` 노드의 이벤트가 필터링되는지 확인
-- `subgraph_agent` 노드의 이벤트는 정상적으로 수신되는지 검증
+- Confirms that events from the `no_stream` node with the `langsmith:nostream` tag are filtered.
+- Verifies that events from the `subgraph_agent` node are received normally.
 
-### 2. 서브그래프 스트리밍 테스트
+### 2. Subgraph Streaming Test
 
 `tests/e2e/test_streaming/test_event_filtering_and_subgraphs.py::test_subgraphs_streaming_parameter_e2e`
 
-- `stream_subgraphs=True` 파라미터가 올바르게 동작하는지 확인
-- 서브그래프 내부 노드(`call_model`)의 이벤트가 수신되는지 검증
+- Confirms that the `stream_subgraphs=True` parameter works correctly.
+- Verifies that events from internal subgraph nodes (`call_model`) are received.
 
-## 관련 문서
+## Related Documents
 
-- **React Agent**: `/graphs/react_agent/AGENTS.md` - 서브그래프로 사용되는 기본 ReAct 에이전트
-- **HITL Agent**: `/graphs/react_agent_hitl/AGENTS.md` - Human-in-the-Loop 패턴 예제
-- **Architecture**: `/CLAUDE.md` - 전체 시스템 아키텍처 및 그래프 통합 방식
+- **React Agent**: `/graphs/react_agent/AGENTS.md` - The basic ReAct agent used as a subgraph.
+- **HITL Agent**: `/graphs/react_agent_hitl/AGENTS.md` - An example of the Human-in-the-Loop pattern.
+- **Architecture**: `/CLAUDE.md` - Overall system architecture and graph integration methods.

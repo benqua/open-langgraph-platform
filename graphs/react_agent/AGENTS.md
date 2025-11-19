@@ -1,54 +1,54 @@
 # ReAct Agent
 
-## 그래프 개요
+## Graph Overview
 
-ReAct Agent는 **Reasoning(추론)과 Acting(행동)을 결합한 패턴**을 구현한 LangGraph 기반 에이전트입니다. 이 패턴은 LLM이 문제 해결을 위해 사고 과정(Thought)과 도구 실행(Action)을 반복하며 점진적으로 답변을 구성하는 방식입니다.
+The ReAct Agent is a LangGraph-based agent that implements the **Reasoning and Acting (ReAct) pattern**. In this pattern, the LLM progressively constructs an answer by iterating through a thought process (Thought) and tool execution (Action) to solve a problem.
 
-### ReAct 패턴 동작 원리
+### How the ReAct Pattern Works
 
 ```
-사용자 질문
+User Question
     ↓
-[Reasoning] LLM이 상황을 분석하고 필요한 도구 결정
+[Reasoning] The LLM analyzes the situation and decides which tool is needed.
     ↓
-[Action] 선택된 도구 실행 (예: 웹 검색)
+[Action] The selected tool is executed (e.g., web search).
     ↓
-[Observation] 도구 실행 결과를 LLM에 전달
+[Observation] The tool's execution result is passed to the LLM.
     ↓
-[Reasoning] 결과를 분석하고 추가 도구 필요 여부 판단
+[Reasoning] The result is analyzed to determine if another tool is needed.
     ↓
-최종 답변 생성 또는 사이클 반복
+A final answer is generated, or the cycle repeats.
 ```
 
-### 주요 특징
+### Key Features
 
-- **간단한 구조**: 복잡한 중단(interrupt) 없이 연속 실행
-- **자동 도구 선택**: LLM이 컨텍스트에 따라 적절한 도구를 자동으로 결정
-- **상태 관리**: LangGraph StateGraph를 통해 대화 히스토리와 실행 컨텍스트 유지
-- **무한 루프 방지**: 재귀 제한(recursion_limit)을 통한 안전한 실행
+- **Simple Structure**: Continuous execution without complex interrupts.
+- **Automatic Tool Selection**: The LLM automatically determines the appropriate tool based on the context.
+- **State Management**: Maintains conversation history and execution context via LangGraph's StateGraph.
+- **Infinite Loop Prevention**: Safe execution through a recursion limit.
 
 ---
 
-## 파일 구조
+## File Structure
 
-ReAct Agent는 7개의 모듈로 구성되며, 각 모듈은 명확한 책임을 가집니다:
+The ReAct Agent is composed of 7 modules, each with a clear responsibility:
 
 ```
 graphs/react_agent/
-├── __init__.py         # 패키지 진입점, 컴파일된 graph 내보내기
-├── context.py          # Runtime[Context] 패턴 - 실행 설정 정의
-├── graph.py            # 그래프 정의 - 노드, 엣지, 실행 흐름
-├── prompts.py          # 시스템 프롬프트 템플릿
-├── state.py            # 상태 스키마 정의 (메시지, 스텝 카운터)
-├── tools.py            # 에이전트가 사용할 도구 함수들
-└── utils.py            # 헬퍼 함수 (모델 로딩, 메시지 처리)
+├── __init__.py         # Package entry point, exports the compiled graph
+├── context.py          # Runtime[Context] pattern - defines execution settings
+├── graph.py            # Graph definition - nodes, edges, execution flow
+├── prompts.py          # System prompt template
+├── state.py            # State schema definition (messages, step counter)
+├── tools.py            # Tool functions for the agent to use
+└── utils.py            # Helper functions (model loading, message processing)
 ```
 
-### 파일별 역할
+### Role of Each File
 
-#### `__init__.py` - 패키지 진입점
-- 컴파일된 `graph` 객체를 외부에 노출
-- open_langgraph.json에서 참조할 수 있도록 내보내기
+#### `__init__.py` - Package Entry Point
+- Exposes the compiled `graph` object externally.
+- Exports it to be referenced in `open_langgraph.json`.
 
 ```python
 from react_agent.graph import graph
@@ -56,49 +56,49 @@ from react_agent.graph import graph
 __all__ = ["graph"]
 ```
 
-#### `context.py` - 런타임 컨텍스트
-- LangGraph의 `Runtime[Context]` 패턴 구현
-- 에이전트 실행 시 필요한 설정 매개변수 정의
-- 환경 변수 자동 로드 지원
+#### `context.py` - Runtime Context
+- Implements LangGraph's `Runtime[Context]` pattern.
+- Defines configuration parameters needed for agent execution.
+- Supports automatic loading of environment variables.
 
-**주요 설정:**
-- `system_prompt`: 에이전트의 역할과 동작 정의
-- `model`: 사용할 LLM 모델 (예: "openai/gpt-4o-mini")
-- `max_search_results`: 검색 도구의 최대 결과 수
+**Key Settings:**
+- `system_prompt`: Defines the agent's role and behavior.
+- `model`: The LLM to use (e.g., "openai/gpt-4o-mini").
+- `max_search_results`: The maximum number of results for the search tool.
 
-#### `graph.py` - 그래프 아키텍처
-- StateGraph 빌더를 통해 노드와 엣지 정의
-- ReAct 패턴의 핵심 실행 흐름 구현
-- 조건부 라우팅 로직 (도구 호출 vs 종료)
+#### `graph.py` - Graph Architecture
+- Defines nodes and edges via the StateGraph builder.
+- Implements the core execution flow of the ReAct pattern.
+- Conditional routing logic (tool call vs. end).
 
-#### `prompts.py` - 프롬프트 템플릿
-- 에이전트의 시스템 메시지 정의
-- 동적 변수 치환 지원 (예: `{system_time}`)
+#### `prompts.py` - Prompt Template
+- Defines the agent's system message.
+- Supports dynamic variable substitution (e.g., `{system_time}`).
 
-#### `state.py` - 상태 스키마
-- `InputState`: 외부 입력 인터페이스 (사용자 메시지)
-- `State`: 전체 실행 상태 (메시지 히스토리, 재귀 제한 플래그)
-- `add_messages` 리듀서를 통한 메시지 누적
+#### `state.py` - State Schema
+- `InputState`: External input interface (user messages).
+- `State`: The entire execution state (message history, recursion limit flag).
+- Message accumulation via the `add_messages` reducer.
 
-#### `tools.py` - 도구 정의
-- 에이전트가 호출할 수 있는 함수들
-- 현재 구현: `search` 도구 (웹 검색 시뮬레이션)
-- `Runtime[Context]`를 통해 사용자별 설정 접근
+#### `tools.py` - Tool Definition
+- Functions that the agent can call.
+- Current implementation: `search` tool (simulates a web search).
+- Accesses user-specific settings via `Runtime[Context]`.
 
-#### `utils.py` - 유틸리티 함수
-- `load_chat_model()`: "provider/model" 형식으로 LLM 초기화
-- `get_message_text()`: 메시지 객체에서 텍스트 추출
+#### `utils.py` - Utility Functions
+- `load_chat_model()`: Initializes an LLM from a "provider/model" format.
+- `get_message_text()`: Extracts text from a message object.
 
 ---
 
-## 그래프 아키텍처
+## Graph Architecture
 
-### 노드 구성
+### Node Configuration
 
-ReAct Agent는 2개의 노드로 구성됩니다:
+The ReAct Agent consists of 2 nodes:
 
-#### 1. `call_model` 노드 (추론)
-**역할**: LLM을 호출하여 다음 행동을 결정
+#### 1. `call_model` Node (Reasoning)
+**Role**: Calls the LLM to decide the next action.
 
 ```python
 async def call_model(state: State, runtime: Runtime[Context]) -> dict:
@@ -112,31 +112,31 @@ async def call_model(state: State, runtime: Runtime[Context]) -> dict:
     return {"messages": [response]}
 ```
 
-**처리 흐름:**
-1. Runtime Context에서 모델 설정 로드
-2. 도구 목록을 모델에 바인딩 (도구 호출 가능하도록)
-3. 시스템 프롬프트 포맷팅 (현재 시간 주입)
-4. LLM 호출 (시스템 메시지 + 대화 히스토리)
-5. 응답 반환 (텍스트 답변 또는 도구 호출 요청)
+**Processing Flow:**
+1. Load model settings from the Runtime Context.
+2. Bind the list of tools to the model (to enable tool calls).
+3. Format the system prompt (injecting the current time).
+4. Call the LLM (system message + conversation history).
+5. Return the response (a text answer or a tool call request).
 
-**재귀 제한 처리:**
-- `state.is_last_step`가 True인데 LLM이 여전히 도구를 호출하려 하면 강제 종료
-- "지정된 스텝 내에 답변을 찾지 못했습니다" 메시지 반환
+**Recursion Limit Handling:**
+- If `state.is_last_step` is True and the LLM still tries to call a tool, it is forcibly terminated.
+- A "Sorry, I could not find an answer..." message is returned.
 
-#### 2. `tools` 노드 (실행)
-**역할**: LLM이 선택한 도구를 실제로 실행
+#### 2. `tools` Node (Execution)
+**Role**: Actually executes the tool selected by the LLM.
 
 ```python
 builder.add_node("tools", ToolNode(TOOLS))
 ```
 
-**처리 흐름:**
-1. 이전 노드(call_model)의 AIMessage에서 `tool_calls` 추출
-2. 각 tool_call에 대해 해당 도구 함수 실행
-3. 도구 실행 결과를 ToolMessage로 상태에 추가
-4. 자동으로 call_model 노드로 복귀
+**Processing Flow:**
+1. Extract `tool_calls` from the AIMessage of the previous node (`call_model`).
+2. Execute the corresponding tool function for each `tool_call`.
+3. Add the tool's execution result to the state as a `ToolMessage`.
+4. Automatically return to the `call_model` node.
 
-### 엣지 정의
+### Edge Definition
 
 ```
 __start__ → call_model ⇄ tools
@@ -144,13 +144,13 @@ __start__ → call_model ⇄ tools
             __end__
 ```
 
-#### 1. 진입 엣지
+#### 1. Entry Edge
 ```python
 builder.add_edge("__start__", "call_model")
 ```
-- 그래프 시작 시 항상 `call_model` 노드부터 실행
+- Always starts execution from the `call_model` node when the graph begins.
 
-#### 2. 조건부 엣지 (call_model 출력)
+#### 2. Conditional Edge (`call_model` output)
 ```python
 def route_model_output(state: State) -> Literal["__end__", "tools"]:
     last_message = state.messages[-1]
@@ -158,98 +158,98 @@ def route_model_output(state: State) -> Literal["__end__", "tools"]:
         raise ValueError(f"Expected AIMessage, got {type(last_message).__name__}")
 
     if not last_message.tool_calls:
-        return "__end__"  # 도구 호출 없음 → 종료
+        return "__end__"  # No tool calls → end
 
-    return "tools"  # 도구 호출 있음 → 도구 실행
+    return "tools"  # Tool calls present → execute tools
 
 builder.add_conditional_edges("call_model", route_model_output)
 ```
 
-**라우팅 로직:**
-- **도구 호출 있음** → `tools` 노드로 이동 (Action 단계)
-- **도구 호출 없음** → `__end__`로 이동 (최종 답변 완성)
+**Routing Logic:**
+- **Tool calls present** → Move to the `tools` node (Action step).
+- **No tool calls** → Move to `__end__` (final answer is complete).
 
-#### 3. 고정 엣지 (tools → call_model)
+#### 3. Fixed Edge (`tools` → `call_model`)
 ```python
 builder.add_edge("tools", "call_model")
 ```
-- 도구 실행 완료 후 항상 `call_model`로 복귀
-- ReAct 사이클 구현: Action → Observation → Thought
+- Always returns to `call_model` after tool execution is complete.
+- Implements the ReAct cycle: Action → Observation → Thought.
 
-### 상태 관리
+### State Management
 
-#### InputState (입력 인터페이스)
+#### InputState (Input Interface)
 ```python
 @dataclass
 class InputState:
     messages: Annotated[Sequence[AnyMessage], add_messages] = field(default_factory=list)
 ```
-- 외부에서 들어오는 입력 데이터 구조
-- 사용자 메시지만 포함
+- The data structure for incoming external input.
+- Contains only user messages.
 
-#### State (전체 실행 상태)
+#### State (Entire Execution State)
 ```python
 @dataclass
 class State(InputState):
     is_last_step: IsLastStep = field(default=False)
 ```
-- InputState를 확장하여 실행 제어 정보 추가
-- `is_last_step`: LangGraph가 관리하는 재귀 제한 플래그
+- Extends `InputState` to add execution control information.
+- `is_last_step`: A recursion limit flag managed by LangGraph.
 
-**add_messages 리듀서:**
-- 메시지를 "추가 전용(append-only)" 방식으로 누적
-- 동일한 ID를 가진 메시지는 업데이트 (덮어쓰기)
-- 메시지 수정 및 재시도 패턴 지원
+**`add_messages` Reducer:**
+- Accumulates messages in an "append-only" manner.
+- Updates (overwrites) messages with the same ID.
+- Supports message modification and retry patterns.
 
 ---
 
-## 실행 흐름
+## Execution Flow
 
-### 일반적인 대화 흐름 예시
+### Example of a Typical Conversation Flow
 
-사용자가 "오늘 날씨는 어때?"라고 질문하는 경우:
+If a user asks, "What's the weather like today?":
 
 ```
 Step 1: __start__ → call_model
-├─ 입력: HumanMessage("오늘 날씨는 어때?")
-├─ LLM 분석: "날씨 정보를 얻기 위해 검색 도구 필요"
-└─ 출력: AIMessage(tool_calls=[{"name": "search", "args": {"query": "오늘 날씨"}}])
+├─ Input: HumanMessage("What's the weather like today?")
+├─ LLM Analysis: "I need the search tool to get weather information."
+└─ Output: AIMessage(tool_calls=[{"name": "search", "args": {"query": "weather today"}}])
 
-Step 2: call_model → tools (조건부 엣지)
-├─ 판단: tool_calls 존재 → tools 노드로 이동
-└─ 도구 실행: search("오늘 날씨")
+Step 2: call_model → tools (Conditional Edge)
+├─ Decision: `tool_calls` exist → move to the `tools` node.
+└─ Tool Execution: search("weather today")
 
-Step 3: tools 노드 실행
-├─ 검색 도구 호출
-├─ 결과 반환: "오늘은 맑고 기온은 22도입니다"
-└─ 출력: ToolMessage(content="오늘은 맑고 기온은 22도입니다")
+Step 3: `tools` Node Execution
+├─ Search tool is called.
+├─ Result returned: "Today is sunny with a temperature of 22 degrees."
+└─ Output: ToolMessage(content="Today is sunny with a temperature of 22 degrees.")
 
-Step 4: tools → call_model (고정 엣지)
-├─ 도구 실행 결과를 LLM에 전달
-├─ LLM이 결과를 분석하여 최종 답변 생성
-└─ 출력: AIMessage("오늘은 맑은 날씨이며 기온은 22도입니다.")
+Step 4: tools → call_model (Fixed Edge)
+├─ The tool's execution result is passed to the LLM.
+├─ The LLM analyzes the result to generate a final answer.
+└─ Output: AIMessage("Today is a sunny day with a temperature of 22 degrees.")
 
-Step 5: call_model → __end__ (조건부 엣지)
-├─ 판단: tool_calls 없음 → 최종 답변 완성
-└─ 그래프 종료
+Step 5: call_model → __end__ (Conditional Edge)
+├─ Decision: No `tool_calls` → the final answer is complete.
+└─ Graph terminates.
 ```
 
-### 메시지 누적 패턴
+### Message Accumulation Pattern
 
-각 단계마다 상태의 `messages` 리스트에 메시지가 누적됩니다:
+At each step, a message is accumulated in the state's `messages` list:
 
 ```python
 [
-    HumanMessage(content="오늘 날씨는 어때?"),
-    AIMessage(content="", tool_calls=[...]),           # 도구 호출 요청
-    ToolMessage(content="검색 결과..."),               # 도구 실행 결과
-    AIMessage(content="오늘은 맑은 날씨입니다."),      # 최종 답변
+    HumanMessage(content="What's the weather like today?"),
+    AIMessage(content="", tool_calls=[...]),           # Tool call request
+    ToolMessage(content="Search result..."),               # Tool execution result
+    AIMessage(content="Today is a sunny day."),      # Final answer
 ]
 ```
 
-### 재귀 제한 처리
+### Recursion Limit Handling
 
-LangGraph는 기본적으로 25회의 재귀 제한(recursion_limit)을 적용합니다:
+LangGraph applies a default recursion limit of 25:
 
 ```python
 if state.is_last_step and response.tool_calls:
@@ -263,18 +263,18 @@ if state.is_last_step and response.tool_calls:
     }
 ```
 
-**동작 방식:**
-1. 스텝 카운트가 `recursion_limit - 1`에 도달하면 `is_last_step = True`
-2. `call_model` 노드에서 이를 감지하여 강제 종료
-3. 다음 스텝에서 `recursion_limit` 도달 시 `RecursionError` 발생 방지
+**How it works:**
+1. When the step count reaches `recursion_limit - 1`, `is_last_step` becomes `True`.
+2. The `call_model` node detects this and forces termination.
+3. This prevents a `RecursionError` from occurring when the `recursion_limit` is reached in the next step.
 
 ---
 
-## 커스터마이징
+## Customization
 
-### 1. 프롬프트 변경
+### 1. Changing the Prompt
 
-**방법 A: prompts.py 수정**
+**Method A: Modify `prompts.py`**
 
 ```python
 # graphs/react_agent/prompts.py
@@ -290,35 +290,35 @@ Instructions:
 """
 ```
 
-**방법 B: 환경 변수로 오버라이드**
+**Method B: Override with an environment variable**
 
 ```bash
-# .env 파일
+# .env file
 SYSTEM_PROMPT="You are a specialized financial advisor. System time: {system_time}"
 ```
 
-### 2. 모델 변경
+### 2. Changing the Model
 
-**방법 A: context.py 기본값 수정**
+**Method A: Modify the default value in `context.py`**
 
 ```python
 # graphs/react_agent/context.py
 @dataclass(kw_only=True)
 class Context:
     model: str = field(
-        default="anthropic/claude-3-5-sonnet-20241022",  # 기본 모델 변경
+        default="anthropic/claude-3-5-sonnet-20241022",  # Change the default model
         metadata={"description": "..."}
     )
 ```
 
-**방법 B: 환境 변수 사용**
+**Method B: Use an environment variable**
 
 ```bash
-# .env 파일
+# .env file
 MODEL=anthropic/claude-3-5-sonnet-20241022
 ```
 
-**방법 C: API 요청 시 지정**
+**Method C: Specify in the API request**
 
 ```bash
 curl -X POST http://localhost:8000/threads/{thread_id}/runs \
@@ -330,9 +330,9 @@ curl -X POST http://localhost:8000/threads/{thread_id}/runs \
   }'
 ```
 
-### 3. 도구 추가
+### 3. Adding a Tool
 
-**Step 1: tools.py에 새 도구 함수 정의**
+**Step 1: Define a new tool function in `tools.py`**
 
 ```python
 # graphs/react_agent/tools.py
@@ -340,22 +340,22 @@ from langgraph.runtime import get_runtime
 from react_agent.context import Context
 
 async def calculator(expression: str) -> dict[str, Any]:
-    """수학 표현식을 계산합니다.
+    """Calculates a mathematical expression.
 
     Args:
-        expression (str): 계산할 수학 표현식 (예: "2 + 2 * 3")
+        expression (str): The mathematical expression to calculate (e.g., "2 + 2 * 3").
 
     Returns:
-        dict: 계산 결과를 포함한 딕셔너리
+        dict: A dictionary containing the calculation result.
     """
     try:
-        result = eval(expression)  # 주의: 프로덕션에서는 안전한 파서 사용
+        result = eval(expression)  # Note: Use a safe parser in production
         return {"expression": expression, "result": result}
     except Exception as e:
         return {"expression": expression, "error": str(e)}
 
 async def get_current_time() -> dict[str, str]:
-    """현재 시간을 반환합니다."""
+    """Returns the current time."""
     from datetime import datetime, UTC
     now = datetime.now(tz=UTC)
     return {
@@ -364,18 +364,18 @@ async def get_current_time() -> dict[str, str]:
     }
 ```
 
-**Step 2: TOOLS 리스트에 추가**
+**Step 2: Add it to the `TOOLS` list**
 
 ```python
 # graphs/react_agent/tools.py
 TOOLS: list[Callable[..., Any]] = [
     search,
-    calculator,        # 추가
-    get_current_time,  # 추가
+    calculator,        # Add
+    get_current_time,  # Add
 ]
 ```
 
-**Step 3: Context에 도구별 설정 추가 (선택사항)**
+**Step 3: Add tool-specific settings to `Context` (optional)**
 
 ```python
 # graphs/react_agent/context.py
@@ -385,22 +385,22 @@ class Context:
     model: str = field(default="openai/gpt-4o-mini", metadata={...})
     max_search_results: int = field(default=10, metadata={...})
 
-    # 새 도구 설정 추가
+    # Add new tool setting
     enable_calculator: bool = field(
         default=True,
         metadata={"description": "Enable calculator tool for math operations"}
     )
 ```
 
-### 4. 도구에서 Context 사용
+### 4. Using Context in a Tool
 
 ```python
 # graphs/react_agent/tools.py
 async def search(query: str) -> dict[str, Any]:
-    runtime = get_runtime(Context)  # Runtime Context 가져오기
-    max_results = runtime.context.max_search_results  # 설정값 사용
+    runtime = get_runtime(Context)  # Get the Runtime Context
+    max_results = runtime.context.max_search_results  # Use the setting
 
-    # 실제 Tavily API 호출 (예시)
+    # Example of a real Tavily API call
     from tavily import TavilyClient
     client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
     results = client.search(query, max_results=max_results)
@@ -411,11 +411,11 @@ async def search(query: str) -> dict[str, Any]:
     }
 ```
 
-### 5. 재귀 제한 조정
+### 5. Adjusting the Recursion Limit
 
-재귀 제한은 open_langgraph.json 또는 API 요청에서 설정할 수 있습니다:
+The recursion limit can be set in `open_langgraph.json` or in an API request:
 
-**open_langgraph.json 설정:**
+**`open_langgraph.json` setting:**
 
 ```json
 {
@@ -428,25 +428,25 @@ async def search(query: str) -> dict[str, Any]:
 }
 ```
 
-**API 요청에서 설정:**
+**Setting in an API request:**
 
 ```bash
 curl -X POST http://localhost:8000/threads/{thread_id}/runs \
   -H "Content-Type: application/json" \
   -d '{
     "assistant_id": "react_agent",
-    "input": {"messages": [{"role": "user", "content": "복잡한 질문"}]},
+    "input": {"messages": [{"role": "user", "content": "A complex question"}]},
     "config": {"recursion_limit": 50}
   }'
 ```
 
 ---
 
-## 사용 예제
+## Usage Examples
 
-### 1. open_langgraph.json 등록
+### 1. Register in `open_langgraph.json`
 
-ReAct Agent를 서버에 등록하려면 `open_langgraph.json`에 추가합니다:
+To register the ReAct Agent with the server, add it to `open_langgraph.json`:
 
 ```json
 {
@@ -460,24 +460,24 @@ ReAct Agent를 서버에 등록하려면 `open_langgraph.json`에 추가합니�
 }
 ```
 
-### 2. 서버 실행
+### 2. Run the Server
 
 ```bash
-# 개발 서버 시작
+# Start the development server
 uv run uvicorn src.agent_server.main:app --reload
 
-# 또는 Docker 사용
+# Or use Docker
 docker compose up open-langgraph
 ```
 
-### 3. 어시스턴트 조회
+### 3. Look up the Assistant
 
-ReAct Agent는 자동으로 기본 어시스턴트가 생성됩니다:
+The ReAct Agent is automatically created as a default assistant:
 
 ```bash
 curl http://localhost:8000/assistants
 
-# 응답 예시:
+# Example response:
 {
   "data": [
     {
@@ -491,23 +491,23 @@ curl http://localhost:8000/assistants
 }
 ```
 
-### 4. 스레드 생성
+### 4. Create a Thread
 
 ```bash
 curl -X POST http://localhost:8000/threads \
   -H "Content-Type: application/json" \
   -d '{}'
 
-# 응답 예시:
+# Example response:
 {
   "thread_id": "abc-123-def-456",
   "created_at": "2024-01-01T00:00:00Z"
 }
 ```
 
-### 5. 실행 (Run) 생성 및 스트리밍
+### 5. Create and Stream a Run
 
-**Non-streaming (일반 실행):**
+**Non-streaming (regular execution):**
 
 ```bash
 curl -X POST http://localhost:8000/threads/abc-123-def-456/runs \
@@ -525,7 +525,7 @@ curl -X POST http://localhost:8000/threads/abc-123-def-456/runs \
   }'
 ```
 
-**Server-Sent Events (SSE) 스트리밍:**
+**Server-Sent Events (SSE) streaming:**
 
 ```bash
 curl -X POST http://localhost:8000/threads/abc-123-def-456/runs/stream \
@@ -543,7 +543,7 @@ curl -X POST http://localhost:8000/threads/abc-123-def-456/runs/stream \
   }'
 ```
 
-**스트리밍 응답 예시:**
+**Example streaming response:**
 
 ```
 event: metadata
@@ -568,12 +568,12 @@ event: end
 data: {}
 ```
 
-### 6. 실행 상태 조회
+### 6. Check Run Status
 
 ```bash
 curl http://localhost:8000/threads/abc-123-def-456/runs/run-123
 
-# 응답 예시:
+# Example response:
 {
   "run_id": "run-123",
   "thread_id": "abc-123-def-456",
@@ -584,12 +584,12 @@ curl http://localhost:8000/threads/abc-123-def-456/runs/run-123
 }
 ```
 
-### 7. 스레드 상태 조회
+### 7. Check Thread State
 
 ```bash
 curl http://localhost:8000/threads/abc-123-def-456/state
 
-# 응답 예시:
+# Example response:
 {
   "values": {
     "messages": [
@@ -623,7 +623,7 @@ curl http://localhost:8000/threads/abc-123-def-456/state
 }
 ```
 
-### 8. Python 클라이언트 사용
+### 8. Using a Python Client
 
 ```python
 import httpx
@@ -632,12 +632,12 @@ import json
 async def run_react_agent():
     base_url = "http://localhost:8000"
 
-    # 1. 스레드 생성
+    # 1. Create a thread
     async with httpx.AsyncClient() as client:
         thread_resp = await client.post(f"{base_url}/threads")
         thread_id = thread_resp.json()["thread_id"]
 
-        # 2. 실행 요청 (스트리밍)
+        # 2. Request execution (streaming)
         async with client.stream(
             "POST",
             f"{base_url}/threads/{thread_id}/runs/stream",
@@ -663,12 +663,12 @@ async def run_react_agent():
                     data = json.loads(line[6:])
                     print(f"Event: {data}")
 
-# 실행
+# Execute
 import asyncio
 asyncio.run(run_react_agent())
 ```
 
-### 9. 커스텀 설정으로 실행
+### 9. Running with Custom Settings
 
 ```bash
 curl -X POST http://localhost:8000/threads/abc-123-def-456/runs \
@@ -693,25 +693,25 @@ curl -X POST http://localhost:8000/threads/abc-123-def-456/runs \
 
 ---
 
-## 고급 사용 패턴
+## Advanced Usage Patterns
 
-### 1. 멀티턴 대화
+### 1. Multi-turn Conversation
 
-ReAct Agent는 대화 히스토리를 자동으로 유지합니다:
+The ReAct Agent automatically maintains conversation history:
 
 ```bash
-# 첫 번째 질문
+# First question
 curl -X POST http://localhost:8000/threads/{thread_id}/runs \
   -d '{"assistant_id": "react_agent", "input": {"messages": [{"role": "user", "content": "What is LangGraph?"}]}}'
 
-# 후속 질문 (같은 thread_id 사용)
+# Follow-up question (using the same thread_id)
 curl -X POST http://localhost:8000/threads/{thread_id}/runs \
   -d '{"assistant_id": "react_agent", "input": {"messages": [{"role": "user", "content": "How is it different from LangChain?"}]}}'
 ```
 
-에이전트는 이전 대화 컨텍스트를 기억하고 "it"이 LangGraph를 지칭함을 이해합니다.
+The agent remembers the previous conversation context and understands that "it" refers to LangGraph.
 
-### 2. 메타데이터 추가
+### 2. Adding Metadata
 
 ```bash
 curl -X POST http://localhost:8000/threads \
@@ -724,71 +724,71 @@ curl -X POST http://localhost:8000/threads \
   }'
 ```
 
-### 3. 이벤트 리플레이
+### 3. Event Replay
 
-스트리밍 중 연결이 끊겼을 때 이벤트를 재생할 수 있습니다:
+If the connection is lost during streaming, you can replay events:
 
 ```bash
 curl "http://localhost:8000/threads/{thread_id}/runs/{run_id}/stream?after_event_id=event-42"
 ```
 
-### 4. 관찰성 (Langfuse 통합)
+### 4. Observability (Langfuse Integration)
 
-Langfuse를 활성화하면 모든 실행이 자동으로 추적됩니다:
+If Langfuse is enabled, all executions are automatically tracked:
 
 ```bash
-# .env 파일
+# .env file
 LANGFUSE_LOGGING=true
 LANGFUSE_PUBLIC_KEY=pk-...
 LANGFUSE_SECRET_KEY=sk-...
 LANGFUSE_HOST=https://cloud.langfuse.com
 ```
 
-LangGraph 실행, 도구 호출, 토큰 사용량 등이 Langfuse 대시보드에 표시됩니다.
+LangGraph executions, tool calls, token usage, etc., will be displayed on the Langfuse dashboard.
 
 ---
 
-## 트러블슈팅
+## Troubleshooting
 
-### 문제 1: "Expected AIMessage in output edges" 오류
+### Problem 1: "Expected AIMessage in output edges" error
 
-**원인**: `route_model_output` 함수에서 마지막 메시지가 AIMessage가 아님
+**Cause**: The last message in the `route_model_output` function is not an AIMessage.
 
-**해결**:
-- `call_model` 노드가 항상 AIMessage를 반환하는지 확인
-- 커스텀 노드를 추가한 경우 메시지 타입 검증
+**Solution**:
+- Ensure that the `call_model` node always returns an AIMessage.
+- If you've added a custom node, verify the message type.
 
-### 문제 2: 도구가 호출되지 않음
+### Problem 2: Tool is not being called
 
-**원인**: 모델이 도구 호출을 지원하지 않거나 도구 바인딩 실패
+**Cause**: The model does not support tool calls, or the tool binding failed.
 
-**해결**:
+**Solution**:
 ```python
-# utils.py에서 지원되는 모델인지 확인
-# 도구 호출 지원 모델 예시:
+# Check in utils.py if the model is supported.
+# Examples of models that support tool calls:
 # - openai/gpt-4, gpt-3.5-turbo
 # - anthropic/claude-3-sonnet, claude-3-opus
 # - google/gemini-pro
 ```
 
-### 문제 3: RecursionError 발생
+### Problem 3: `RecursionError` occurs
 
-**원인**: `recursion_limit` 초과
+**Cause**: The `recursion_limit` was exceeded.
 
-**해결**:
+**Solution**:
 ```bash
-# 재귀 제한 증가
+# Increase the recursion limit
 curl -X POST http://localhost:8000/threads/{thread_id}/runs \
   -d '{"config": {"recursion_limit": 50}, ...}'
 ```
 
-### 문제 4: 환경 변수가 적용되지 않음
+### Problem 4: Environment variables are not being applied
 
-**원인**: `Context.__post_init__`에서 환경 변수 로드 실패
+**Cause**: Failed to load environment variables in `Context.__post_init__`.
 
-**해결**:
+**Solution**:
 ```python
-# context.py에서 디버깅
+# Debug in context.py
 def __post_init__(self) -> None:
     for f in fields(self):
         if not f.init:
@@ -800,25 +800,25 @@ def __post_init__(self) -> None:
 
 ---
 
-## 참고 자료
+## References
 
-- **LangGraph 공식 문서**: https://langchain-ai.github.io/langgraph/
-- **ReAct 논문**: [ReAct: Synergizing Reasoning and Acting in Language Models](https://arxiv.org/abs/2210.03629)
-- **Open LangGraph 프로젝트 CLAUDE.md**: `/Users/jhj/Desktop/personal/opensource-langgraph-platform/CLAUDE.md`
-- **LangGraph 도구 호출 가이드**: https://langchain-ai.github.io/langgraph/how-tos/tool-calling/
-
----
-
-## 다음 단계
-
-ReAct Agent를 이해했다면 다음 고급 패턴을 탐색해보세요:
-
-1. **graphs/react_agent_hitl/**: Human-in-the-Loop 패턴 (사용자 승인 필요)
-2. **graphs/subgraph_agent/**: 서브그래프 합성 패턴 (복잡한 워크플로우)
-3. **커스텀 그래프 생성**: 프로젝트 요구사항에 맞는 새로운 그래프 설계
+- **LangGraph Official Documentation**: https://langchain-ai.github.io/langgraph/
+- **ReAct Paper**: [ReAct: Synergizing Reasoning and Acting in Language Models](https://arxiv.org/abs/2210.03629)
+- **Open LangGraph Project CLAUDE.md**: `/Users/jhj/Desktop/personal/opensource-langgraph-platform/CLAUDE.md`
+- **LangGraph Tool Calling Guide**: https://langchain-ai.github.io/langgraph/how-tos/tool-calling/
 
 ---
 
-## 라이선스
+## Next Steps
 
-이 코드는 Open LangGraph 프로젝트의 일부로 MIT 라이선스 하에 제공됩니다.
+Once you understand the ReAct Agent, explore these advanced patterns:
+
+1. **graphs/react_agent_hitl/**: Human-in-the-Loop pattern (requires user approval)
+2. **graphs/subgraph_agent/**: Subgraph composition pattern (complex workflows)
+3. **Create a Custom Graph**: Design a new graph that meets your project's requirements.
+
+---
+
+## License
+
+This code is part of the Open LangGraph project and is provided under the MIT License.

@@ -1,50 +1,50 @@
 # Human-in-the-Loop ReAct Agent
 
-이 디렉토리는 도구 실행 전 사람의 승인을 받는 **Human-in-the-Loop(HITL)** 패턴의 ReAct 에이전트를 구현합니다.
+This directory implements a ReAct agent with a **Human-in-the-Loop (HITL)** pattern, which requires human approval before executing tools.
 
-## 개요
+## Overview
 
-### HITL 패턴이란?
+### What is the HITL Pattern?
 
-Human-in-the-Loop(HITL)은 에이전트가 중요한 액션을 수행하기 전에 사람의 검토와 승인을 받는 패턴입니다. 이 에이전트는 LangGraph의 `interrupt()` 함수를 활용하여 도구 실행 전 실행을 일시 중단하고, 사용자가 다음 중 하나를 선택할 수 있도록 합니다:
+Human-in-the-Loop (HITL) is a pattern where an agent seeks human review and approval before performing critical actions. This agent utilizes LangGraph's `interrupt()` function to pause execution before tool execution, allowing the user to choose one of the following options:
 
-- **승인(accept)**: 도구를 원래 인자 그대로 실행
-- **수정(edit)**: 도구 인자를 수정한 후 실행
-- **응답(response)**: 도구 실행을 취소하고 사용자 메시지로 대체
-- **무시(ignore)**: 도구 실행을 취소하고 대화 종료
+- **accept**: Execute the tool with the original arguments.
+- **edit**: Modify the tool arguments and then execute.
+- **response**: Cancel the tool execution and substitute it with a user message.
+- **ignore**: Cancel the tool execution and end the conversation.
 
-### 기본 ReAct Agent와의 차이점
+### Differences from the Basic ReAct Agent
 
-| 특징 | react_agent | react_agent_hitl |
-|------|-------------|-------------------|
-| 도구 실행 | 자동 실행 | 사용자 승인 필요 |
-| 인터럽트 | 없음 | `human_approval` 노드 |
-| 도구 수정 | 불가능 | 실행 전 인자 수정 가능 |
-| 사용자 제어 | 낮음 | 높음 (모든 도구 호출 검토) |
+| Feature | react_agent | react_agent_hitl |
+|---|---|---|
+| Tool Execution | Automatic | Requires user approval |
+| Interrupt | None | `human_approval` node |
+| Tool Modification | Not possible | Can modify arguments before execution |
+| User Control | Low | High (reviews all tool calls) |
 
-### 동작 흐름
+### Operational Flow
 
 ```
-시작
+Start
   ↓
-call_model (LLM이 도구 호출 결정)
+call_model (LLM decides to call a tool)
   ↓
-도구 호출 있음?
-  ├─ 예 → human_approval (인터럽트, 사용자 승인 대기)
+Tool call present?
+  ├─ Yes → human_approval (interrupt, wait for user approval)
   │         ↓
-  │      사용자 응답 처리
-  │         ├─ accept → tools (도구 실행) → call_model
-  │         ├─ edit → tools (수정된 인자로 실행) → call_model
-  │         ├─ response → call_model (사용자 메시지와 함께)
-  │         └─ ignore → END (종료)
+  │      Process user response
+  │         ├─ accept → tools (execute tool) → call_model
+  │         ├─ edit → tools (execute with modified arguments) → call_model
+  │         ├─ response → call_model (with user message)
+  │         └─ ignore → END (terminate)
   │
-  └─ 아니오 → END (최종 응답)
+  └─ No → END (final response)
 ```
 
-## 파일 구조
+## File Structure
 
 ### 1. `__init__.py`
-**역할**: 패키지 진입점 및 그래프 내보내기
+**Role**: Package entry point and graph export
 
 ```python
 from react_agent_hitl.graph import graph
@@ -52,24 +52,24 @@ from react_agent_hitl.graph import graph
 __all__ = ["graph"]
 ```
 
-- `graph` 객체를 외부에 노출하여 `open_langgraph.json`에서 참조 가능
-- 패키지 수준의 문서화 제공
+- Exposes the `graph` object to be referenced in `open_langgraph.json`.
+- Provides package-level documentation.
 
 ### 2. `context.py`
-**역할**: 런타임 설정 컨텍스트 정의
+**Role**: Defines the runtime settings context.
 
-**주요 구성 요소**:
-- `Context` dataclass: 에이전트 실행 시 필요한 설정 파라미터
-  - `system_prompt`: 에이전트 행동 정의
-  - `model`: 사용할 언어 모델 (예: `"openai/gpt-4o-mini"`)
-  - `max_search_results`: 검색 결과 최대 개수
+**Key Components**:
+- `Context` dataclass: Configuration parameters required for agent execution.
+  - `system_prompt`: Defines the agent's behavior.
+  - `model`: The language model to use (e.g., `"openai/gpt-4o-mini"`).
+  - `max_search_results`: Maximum number of search results.
 
-**특징**:
-- 환경 변수 자동 로드: `__post_init__`에서 환경 변수 우선 적용
-- LangGraph 템플릿 시스템 통합: `model` 필드에 메타데이터 어노테이션
-- `Runtime[Context]` 패턴으로 그래프 노드에서 접근 가능
+**Features**:
+- Automatic loading of environment variables: `__post_init__` prioritizes environment variables.
+- Integration with LangGraph's template system: Metadata annotation on the `model` field.
+- Accessible from graph nodes using the `Runtime[Context]` pattern.
 
-**사용 예**:
+**Usage Example**:
 ```python
 async def call_model(state: State, runtime: Runtime[Context]):
     model = load_chat_model(runtime.context.model)
@@ -77,47 +77,47 @@ async def call_model(state: State, runtime: Runtime[Context]):
 ```
 
 ### 3. `state.py`
-**역할**: 그래프 상태 구조 정의
+**Role**: Defines the graph's state structure.
 
-**주요 구성 요소**:
-- `InputState`: 외부 인터페이스 (클라이언트가 제공하는 입력)
-  - `messages`: 대화 메시지 히스토리 (add_messages 리듀서 사용)
+**Key Components**:
+- `InputState`: External interface (input provided by the client).
+  - `messages`: Conversation message history (using the `add_messages` reducer).
 
-- `State`: 완전한 내부 상태 (InputState 확장)
-  - `is_last_step`: 재귀 한계 도달 여부 (LangGraph 관리 변수)
+- `State`: The complete internal state (extends `InputState`).
+  - `is_last_step`: Flag indicating if the recursion limit has been reached (a LangGraph-managed variable).
 
-**메시지 누적 패턴**:
-1. `HumanMessage` - 사용자 입력
-2. `AIMessage` (tool_calls 포함) - 에이전트의 도구 호출 요청
-3. **[인터럽트 발생]** - 사용자 승인 대기
-4. `ToolMessage(s)` - 도구 실행 결과 또는 취소 메시지
-5. `AIMessage` (tool_calls 없음) - 최종 응답
-6. `HumanMessage` - 다음 대화 턴
+**Message Accumulation Pattern**:
+1. `HumanMessage` - User input.
+2. `AIMessage` (with `tool_calls`) - Agent's tool call request.
+3. **[Interrupt Occurs]** - Awaiting user approval.
+4. `ToolMessage(s)` - Tool execution results or cancellation messages.
+5. `AIMessage` (without `tool_calls`) - Final response.
+6. `HumanMessage` - Next conversation turn.
 
-**인터럽트 시 상태 처리**:
-- `interrupt()` 호출 시 현재 상태가 체크포인트에 보존됨
-- 사용자가 도구를 수정하면 AIMessage가 업데이트됨
-- 사용자가 응답을 선택하면 HumanMessage가 추가됨
+**State Handling on Interrupt**:
+- When `interrupt()` is called, the current state is preserved in a checkpoint.
+- If the user modifies a tool, the `AIMessage` is updated.
+- If the user chooses to respond, a `HumanMessage` is added.
 
 ### 4. `graph.py`
-**역할**: 핵심 그래프 로직 및 HITL 메커니즘 구현
+**Role**: Implements the core graph logic and HITL mechanism.
 
-**주요 노드**:
+**Key Nodes**:
 
 #### `call_model(state: State, runtime: Runtime[Context])`
-LLM을 호출하여 다음 액션 결정
-- 도구 목록을 모델에 바인딩
-- 시스템 프롬프트 포맷팅 (현재 시간 포함)
-- 재귀 한계 도달 시 에러 메시지 반환
+Calls the LLM to decide the next action.
+- Binds the list of tools to the model.
+- Formats the system prompt (including the current time).
+- Returns an error message if the recursion limit is reached.
 
 #### `human_approval(state: State)` ⭐
-**핵심 인터럽트 지점**
+**Core Interrupt Point**
 
-도구 실행 전 사용자 승인 요청
+Requests user approval before tool execution.
 
-**동작 흐름**:
-1. 도구 호출이 포함된 가장 최근 AI 메시지 찾기
-2. `interrupt()` 호출로 실행 일시 중단
+**Operational Flow**:
+1. Find the most recent AI message containing tool calls.
+2. Pause execution by calling `interrupt()`.
    ```python
    human_response = interrupt({
        "action_request": {
@@ -132,21 +132,21 @@ LLM을 호출하여 다음 액션 결정
        }
    })
    ```
-3. 사용자 응답 대기 (체크포인트에 상태 저장됨)
-4. 사용자 응답에 따라 분기 처리
+3. Wait for user response (state is saved in a checkpoint).
+4. Branch based on the user's response.
 
 #### `route_model_output(state: State)`
-모델 출력에 따라 다음 노드 결정
-- 도구 호출 있음 → `human_approval`
-- 도구 호출 없음 → `END`
+Determines the next node based on the model's output.
+- If tool calls are present → `human_approval`
+- If no tool calls → `END`
 
-**헬퍼 함수들**:
-- `_find_tool_message()`: 도구 호출이 포함된 최근 AI 메시지 찾기
-- `_create_tool_cancellations()`: 도구 취소 메시지 생성
-- `_parse_args()`: JSON 문자열 인자 파싱
-- `_update_tool_calls()`: 사용자 수정 인자로 도구 호출 업데이트
+**Helper Functions**:
+- `_find_tool_message()`: Finds the most recent AI message with tool calls.
+- `_create_tool_cancellations()`: Creates tool cancellation messages.
+- `_parse_args()`: Parses JSON string arguments.
+- `_update_tool_calls()`: Updates tool calls with user-modified arguments.
 
-**그래프 구조**:
+**Graph Structure**:
 ```python
 builder = StateGraph(State, input_schema=InputState, context_schema=Context)
 builder.add_node(call_model)
@@ -159,7 +159,7 @@ graph = builder.compile(name="ReAct Agent")
 ```
 
 ### 5. `prompts.py`
-**역할**: 시스템 프롬프트 템플릿 정의
+**Role**: Defines the system prompt template.
 
 ```python
 SYSTEM_PROMPT = """You are a helpful AI assistant.
@@ -167,18 +167,18 @@ SYSTEM_PROMPT = """You are a helpful AI assistant.
 System time: {system_time}"""
 ```
 
-- 에이전트의 페르소나 및 행동 방식 정의
-- `{system_time}` 변수는 런타임에 동적으로 치환됨
-- 프로덕션 환경에서는 더 상세한 프롬프트로 커스터마이징 가능
+- Defines the agent's persona and behavior.
+- The `{system_time}` variable is dynamically replaced at runtime.
+- Can be customized with a more detailed prompt for production environments.
 
 ### 6. `tools.py`
-**역할**: 에이전트가 사용할 도구 정의
+**Role**: Defines the tools the agent can use.
 
-**주요 구성 요소**:
-- `search(query: str)`: 웹 검색 도구
-  - Tavily 기반 검색 (현재는 시뮬레이션)
-  - `Runtime[Context]`를 통해 `max_search_results` 설정 접근
-  - 비동기 함수로 구현
+**Key Components**:
+- `search(query: str)`: A web search tool.
+  - Tavily-based search (currently simulated).
+  - Accesses `max_search_results` setting via `Runtime[Context]`.
+  - Implemented as an asynchronous function.
 
 ```python
 async def search(query: str) -> dict[str, Any] | None:
@@ -192,29 +192,29 @@ async def search(query: str) -> dict[str, Any] | None:
 TOOLS: list[Callable[..., Any]] = [search]
 ```
 
-**확장 방법**:
-- 새로운 도구 함수를 정의하고 `TOOLS` 리스트에 추가
-- 각 도구는 docstring으로 사용법 설명 (LLM이 참조)
-- 프로덕션 환경에서는 실제 API 호출로 구현 필요
+**How to Extend**:
+- Define new tool functions and add them to the `TOOLS` list.
+- Each tool should have a docstring explaining its usage (for the LLM to reference).
+- In a production environment, this should be implemented with actual API calls.
 
 ### 7. `utils.py`
-**역할**: 공통 유틸리티 함수
+**Role**: Common utility functions.
 
-**주요 함수**:
+**Key Functions**:
 
 #### `get_message_text(msg: BaseMessage) -> str`
-메시지에서 텍스트 콘텐츠 추출
-- 단순 문자열, 딕셔너리, 멀티모달 리스트 모두 지원
-- 텍스트만 추출하여 반환
+Extracts text content from a message.
+- Supports simple strings, dictionaries, and multimodal lists.
+- Extracts and returns only the text.
 
 #### `load_chat_model(fully_specified_name: str) -> BaseChatModel`
-"provider/model" 형식에서 채팅 모델 로드
-- 예: `"openai/gpt-4"`, `"anthropic/claude-3-opus"`
-- 설정 파일이나 환경 변수로 모델 지정 시 유용
+Loads a chat model from a "provider/model" format.
+- Examples: `"openai/gpt-4"`, `"anthropic/claude-3-opus"`.
+- Useful for specifying models via configuration files or environment variables.
 
-## 인터럽트 메커니즘 상세
+## Interrupt Mechanism in Detail
 
-### 1. 인터럽트 트리거
+### 1. Interrupt Trigger
 
 ```python
 human_response = interrupt({
@@ -223,55 +223,55 @@ human_response = interrupt({
         "args": {tc["name"]: tc.get("args", {}) for tc in tool_message.tool_calls}
     },
     "config": {
-        "allow_respond": True,   # 사용자가 직접 응답 가능
-        "allow_accept": True,    # 도구 승인 가능
-        "allow_edit": True,      # 도구 인자 수정 가능
-        "allow_ignore": True     # 도구 실행 거부 가능
+        "allow_respond": True,   # User can respond directly
+        "allow_accept": True,    # User can approve the tool
+        "allow_edit": True,      # User can edit tool arguments
+        "allow_ignore": True     # User can deny tool execution
     }
 })
 ```
 
-### 2. 체크포인트 저장
+### 2. Checkpoint Saving
 
-- LangGraph가 자동으로 현재 상태를 PostgreSQL에 저장
-- 스레드 ID와 체크포인트 ID로 나중에 복원 가능
-- 메시지 히스토리, 메타데이터 모두 보존됨
+- LangGraph automatically saves the current state to PostgreSQL.
+- Can be restored later using the thread ID and checkpoint ID.
+- Message history and metadata are all preserved.
 
-### 3. 클라이언트 알림
+### 3. Client Notification
 
-- SSE(Server-Sent Events) 스트림으로 인터럽트 이벤트 전송
-- 이벤트에 `action_request`와 `config` 포함
-- 클라이언트는 사용자에게 승인/거부 UI 표시
+- An interrupt event is sent via an SSE (Server-Sent Events) stream.
+- The event includes `action_request` and `config`.
+- The client displays an approval/denial UI to the user.
 
-### 4. 사용자 응답 대기
+### 4. Awaiting User Response
 
-- 실행이 일시 중단되고 사용자 입력 대기
-- 타임아웃 없음 (사용자가 결정할 때까지 대기)
-- 스레드는 다른 요청과 독립적으로 관리됨
+- Execution is paused, waiting for user input.
+- No timeout (waits until the user makes a decision).
+- The thread is managed independently of other requests.
 
-## 사용자 응답 처리
+## Handling User Responses
 
-### 1. Accept (승인)
+### 1. Accept
 
-**요청**:
+**Request**:
 ```json
 [{"type": "accept"}]
 ```
 
-**처리**:
+**Processing**:
 ```python
 if response_type == "accept":
     return Command(goto="tools")
 ```
 
-**결과**:
-- 도구를 원래 인자 그대로 실행
-- `tools` 노드로 라우팅
-- 도구 실행 후 `call_model`로 복귀
+**Result**:
+- The tool is executed with the original arguments.
+- Routes to the `tools` node.
+- Returns to `call_model` after tool execution.
 
-### 2. Edit (수정)
+### 2. Edit
 
-**요청**:
+**Request**:
 ```json
 [{
     "type": "edit",
@@ -285,7 +285,7 @@ if response_type == "accept":
 }]
 ```
 
-**처리**:
+**Processing**:
 ```python
 elif response_type == "edit" and isinstance(response_args, dict) and "args" in response_args:
     updated_calls = _update_tool_calls(tool_message.tool_calls, response_args)
@@ -297,14 +297,14 @@ elif response_type == "edit" and isinstance(response_args, dict) and "args" in r
     return Command(goto="tools", update={"messages": [updated_message]})
 ```
 
-**결과**:
-- 도구 인자가 사용자 제공 값으로 업데이트됨
-- 수정된 AIMessage로 상태 업데이트
-- 수정된 인자로 도구 실행
+**Result**:
+- The tool arguments are updated with the user-provided values.
+- The state is updated with the modified `AIMessage`.
+- The tool is executed with the modified arguments.
 
-### 3. Response (응답)
+### 3. Response
 
-**요청**:
+**Request**:
 ```json
 [{
     "type": "response",
@@ -312,7 +312,7 @@ elif response_type == "edit" and isinstance(response_args, dict) and "args" in r
 }]
 ```
 
-**처리**:
+**Processing**:
 ```python
 elif response_type == "response":
     tool_responses = _create_tool_cancellations(
@@ -325,21 +325,21 @@ elif response_type == "response":
     )
 ```
 
-**결과**:
-- 도구 호출들이 취소 메시지로 변환됨
-- 사용자 텍스트가 HumanMessage로 추가됨
-- `call_model`로 라우팅되어 모델이 새로운 컨텍스트로 응답
+**Result**:
+- The tool calls are converted into cancellation messages.
+- The user's text is added as a `HumanMessage`.
+- Routes to `call_model`, where the model responds to the new context.
 
-### 4. Ignore (무시)
+### 4. Ignore
 
-**요청**:
+**Request**:
 ```json
 [{"type": "ignore"}]
 ```
 
-**처리**:
+**Processing**:
 ```python
-else:  # ignore 또는 잘못된 형식
+else:  # ignore or invalid format
     reason = (
         "cancelled by human operator"
         if response_type == "ignore"
@@ -349,17 +349,17 @@ else:  # ignore 또는 잘못된 형식
     return Command(goto=END, update={"messages": tool_responses})
 ```
 
-**결과**:
-- 도구 호출들이 취소 메시지로 변환됨
-- 그래프 실행 종료 (`END`)
-- 대화 중단됨
+**Result**:
+- The tool calls are converted into cancellation messages.
+- The graph execution terminates (`END`).
+- The conversation is stopped.
 
-## 재개 워크플로우
+## Resumption Workflow
 
-### 1. 초기 실행
+### 1. Initial Execution
 
 ```bash
-# 스레드 생성 및 실행 시작
+# Create a thread and start execution
 POST /threads/{thread_id}/runs
 Content-Type: application/json
 
@@ -373,9 +373,9 @@ Content-Type: application/json
 }
 ```
 
-### 2. 인터럽트 이벤트 수신
+### 2. Receiving an Interrupt Event
 
-클라이언트는 SSE 스트림에서 다음 이벤트를 받음:
+The client receives the following event from the SSE stream:
 
 ```json
 {
@@ -399,49 +399,49 @@ Content-Type: application/json
 }
 ```
 
-### 3. 사용자 결정
+### 3. User Decision
 
-클라이언트는 사용자에게 승인 UI 표시:
-- "도구를 실행하시겠습니까?"
-- "도구 인자를 수정하시겠습니까?"
-- "직접 응답을 제공하시겠습니까?"
-- "도구 실행을 취소하시겠습니까?"
+The client displays an approval UI to the user:
+- "Do you want to execute the tool?"
+- "Do you want to modify the tool arguments?"
+- "Do you want to provide a response directly?"
+- "Do you want to cancel the tool execution?"
 
-### 4. 실행 재개
+### 4. Resuming Execution
 
-사용자가 선택한 응답 타입으로 재개:
+Resume with the response type chosen by the user:
 
 ```bash
 POST /threads/{thread_id}/runs/{run_id}
 Content-Type: application/json
 
 [{"type": "accept"}]
-# 또는
+# or
 [{"type": "edit", "args": {"args": {"search": {"query": "modified query"}}}}]
-# 또는
+# or
 [{"type": "response", "args": "I'll answer directly..."}]
-# 또는
+# or
 [{"type": "ignore"}]
 ```
 
-### 5. 실행 완료
+### 5. Execution Completion
 
-- `accept` 또는 `edit`: 도구 실행 후 모델이 최종 응답 생성
-- `response`: 모델이 사용자 메시지를 기반으로 응답 생성
-- `ignore`: 실행 즉시 종료
+- `accept` or `edit`: The model generates a final response after the tool executes.
+- `response`: The model generates a response based on the user's message.
+- `ignore`: Execution terminates immediately.
 
-## 사용 예제
+## Usage Examples
 
-### 예제 1: 기본 승인 플로우
+### Example 1: Basic Approval Flow
 
-**시나리오**: 사용자가 검색을 요청하고, 에이전트의 도구 호출을 승인
+**Scenario**: The user requests a search, and approves the agent's tool call.
 
-1. **사용자 입력**:
+1. **User Input**:
    ```
    "What's the weather in Seoul?"
    ```
 
-2. **모델 응답** (도구 호출):
+2. **Model Response** (Tool Call):
    ```json
    {
      "tool_calls": [{
@@ -451,34 +451,34 @@ Content-Type: application/json
    }
    ```
 
-3. **인터럽트 발생**:
-   - 클라이언트가 승인 요청 수신
-   - 사용자에게 "Search for 'weather Seoul'?" 표시
+3. **Interrupt Occurs**:
+   - The client receives an approval request.
+   - Displays "Search for 'weather Seoul'?" to the user.
 
-4. **사용자 승인**:
+4. **User Approval**:
    ```json
    [{"type": "accept"}]
    ```
 
-5. **도구 실행**:
-   - 검색 도구가 실행됨
-   - 결과가 메시지에 추가됨
+5. **Tool Execution**:
+   - The search tool is executed.
+   - The result is added to the messages.
 
-6. **최종 응답**:
+6. **Final Response**:
    ```
    "The current weather in Seoul is..."
    ```
 
-### 예제 2: 도구 인자 수정
+### Example 2: Modifying Tool Arguments
 
-**시나리오**: 사용자가 검색 쿼리를 더 구체적으로 수정
+**Scenario**: The user makes a search query more specific.
 
-1. **사용자 입력**:
+1. **User Input**:
    ```
    "Find information about Python"
    ```
 
-2. **모델 응답** (도구 호출):
+2. **Model Response** (Tool Call):
    ```json
    {
      "tool_calls": [{
@@ -488,10 +488,10 @@ Content-Type: application/json
    }
    ```
 
-3. **인터럽트 발생**:
-   - 사용자가 "Python"이 너무 광범위하다고 판단
+3. **Interrupt Occurs**:
+   - The user decides that "Python" is too broad.
 
-4. **사용자 수정**:
+4. **User Modification**:
    ```json
    [{
      "type": "edit",
@@ -505,25 +505,25 @@ Content-Type: application/json
    }]
    ```
 
-5. **수정된 도구 실행**:
-   - 더 구체적인 쿼리로 검색 실행
-   - 더 관련성 높은 결과 반환
+5. **Modified Tool Execution**:
+   - The search is executed with the more specific query.
+   - More relevant results are returned.
 
-6. **최종 응답**:
+6. **Final Response**:
    ```
    "Here are the latest Python features in 2024..."
    ```
 
-### 예제 3: 직접 응답 제공
+### Example 3: Providing a Direct Response
 
-**시나리오**: 사용자가 도구 실행 대신 직접 답변을 제공
+**Scenario**: The user provides the answer directly instead of letting the tool run.
 
-1. **사용자 입력**:
+1. **User Input**:
    ```
    "What's 2+2?"
    ```
 
-2. **모델 응답** (도구 호출):
+2. **Model Response** (Tool Call):
    ```json
    {
      "tool_calls": [{
@@ -532,12 +532,12 @@ Content-Type: application/json
      }]
    }
    ```
-   (모델이 불필요하게 검색하려 함)
+   (The model unnecessarily tries to search.)
 
-3. **인터럽트 발생**:
-   - 사용자가 검색이 불필요하다고 판단
+3. **Interrupt Occurs**:
+   - The user decides the search is unnecessary.
 
-4. **사용자 응답**:
+4. **User Response**:
    ```json
    [{
      "type": "response",
@@ -545,25 +545,25 @@ Content-Type: application/json
    }]
    ```
 
-5. **모델 재호출**:
-   - 도구 취소 메시지 + 사용자 메시지와 함께 모델 호출
-   - 모델이 새로운 컨텍스트로 응답 생성
+5. **Model Recalled**:
+   - The model is called with the tool cancellation message + user message.
+   - The model generates a response with the new context.
 
-6. **최종 응답**:
+6. **Final Response**:
    ```
    "You're right! The answer is 4."
    ```
 
-### 예제 4: 도구 실행 취소
+### Example 4: Canceling Tool Execution
 
-**시나리오**: 사용자가 도구 실행을 완전히 거부
+**Scenario**: The user completely rejects the tool execution.
 
-1. **사용자 입력**:
+1. **User Input**:
    ```
    "Delete all my files"
    ```
 
-2. **모델 응답** (도구 호출):
+2. **Model Response** (Tool Call):
    ```json
    {
      "tool_calls": [{
@@ -573,31 +573,31 @@ Content-Type: application/json
    }
    ```
 
-3. **인터럽트 발생**:
-   - 위험한 작업 감지
-   - 사용자에게 경고 표시
+3. **Interrupt Occurs**:
+   - A dangerous operation is detected.
+   - A warning is displayed to the user.
 
-4. **사용자 거부**:
+4. **User Rejection**:
    ```json
    [{"type": "ignore"}]
    ```
 
-5. **실행 종료**:
-   - 도구 취소 메시지 추가
-   - 그래프 실행 즉시 종료
-   - 안전하게 대화 중단
+5. **Execution Termination**:
+   - A tool cancellation message is added.
+   - The graph execution terminates immediately.
+   - The conversation is safely stopped.
 
-## 프로덕션 고려사항
+## Production Considerations
 
-### 1. 도구 구현
+### 1. Tool Implementation
 
-현재 `search` 도구는 시뮬레이션입니다. 실제 환경에서는:
+The current `search` tool is a simulation. In a real environment:
 
 ```python
 async def search(query: str) -> dict[str, Any] | None:
     runtime = get_runtime(Context)
 
-    # Tavily API 호출
+    # Tavily API call
     from tavily import TavilyClient
     client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
 
@@ -612,9 +612,9 @@ async def search(query: str) -> dict[str, Any] | None:
     }
 ```
 
-### 2. 시스템 프롬프트 커스터마이징
+### 2. System Prompt Customization
 
-프로덕션 환경에서는 더 상세한 프롬프트 권장:
+A more detailed prompt is recommended for production environments:
 
 ```python
 SYSTEM_PROMPT = """You are a helpful AI assistant specialized in [domain].
@@ -632,44 +632,44 @@ Available tools:
 """
 ```
 
-### 3. 타임아웃 처리
+### 3. Timeout Handling
 
-인터럽트는 무기한 대기하므로, 애플리케이션 레벨에서 타임아웃 구현 권장:
+Since interrupts wait indefinitely, implementing a timeout at the application level is recommended:
 
 ```python
-# 클라이언트 측 타임아웃
-timeout = 300  # 5분
+# Client-side timeout
+timeout = 300  # 5 minutes
 if time_since_interrupt > timeout:
-    # 자동으로 ignore 응답 전송
+    # Automatically send an ignore response
     await send_resume([{"type": "ignore"}])
 ```
 
-### 4. 에러 처리
+### 4. Error Handling
 
-사용자 응답 형식 검증 강화:
+Strengthen user response format validation:
 
 ```python
 def validate_response(response: dict) -> bool:
     response_type = response.get("type")
 
     if response_type == "edit":
-        # args.args 구조 검증
+        # Validate args.args structure
         if not isinstance(response.get("args"), dict):
             return False
         if "args" not in response["args"]:
             return False
 
     elif response_type == "response":
-        # 텍스트 응답 검증
+        # Validate text response
         if not response.get("args"):
             return False
 
     return True
 ```
 
-### 5. 로깅 및 모니터링
+### 5. Logging and Monitoring
 
-인터럽트 지점 추적:
+Track interrupt points:
 
 ```python
 import logging
@@ -683,41 +683,41 @@ async def human_approval(state: State) -> Command:
 
     logger.info(f"User response: {human_response[0].get('type')}")
 
-    # ...처리 로직
+    # ...processing logic
 ```
 
-## 알려진 제한사항
+## Known Limitations
 
-### 1. Command(goto=END) 버그
+### 1. Command(goto=END) Bug
 
-현재 LangGraph의 알려진 버그로 인해 `Command(goto=END)`가 무한 루프를 생성할 수 있습니다.
+A known bug in LangGraph can cause `Command(goto=END)` to create an infinite loop.
 
-- **GitHub 이슈**: https://github.com/langchain-ai/langgraph/issues/5572
-- **영향**: `ignore` 응답 타입 처리 시 발생 가능
-- **해결 방법**: LangGraph 업데이트 대기 또는 대체 종료 로직 구현
+- **GitHub Issue**: https://github.com/langchain-ai/langgraph/issues/5572
+- **Impact**: Can occur when handling the `ignore` response type.
+- **Solution**: Wait for a LangGraph update or implement alternative termination logic.
 
-### 2. 다중 도구 호출
+### 2. Multiple Tool Calls
 
-모델이 여러 도구를 동시에 호출하는 경우:
-- 현재는 모든 도구를 한 번에 승인/거부/수정
-- 향후 개선: 도구별로 개별 승인 가능하도록 확장
+If the model calls multiple tools simultaneously:
+- Currently, all tools are approved/rejected/modified at once.
+- Future improvement: Extend to allow individual approval per tool.
 
-### 3. 중첩 인터럽트
+### 3. Nested Interrupts
 
-인터럽트가 진행 중일 때 추가 인터럽트 불가:
-- 한 번에 하나의 인터럽트만 처리
-- 재개 후 다음 도구 호출에서 새로운 인터럽트 발생
+Additional interrupts are not possible while an interrupt is in progress:
+- Only one interrupt can be handled at a time.
+- A new interrupt can occur on the next tool call after resumption.
 
-## 참고 자료
+## References
 
-- **LangGraph 문서**: https://langchain-ai.github.io/langgraph/
-- **Interrupt 가이드**: https://langchain-ai.github.io/langgraph/how-tos/human-in-the-loop/
-- **기본 ReAct Agent**: `/graphs/react_agent/AGENTS.md`
+- **LangGraph Documentation**: https://langchain-ai.github.io/langgraph/
+- **Interrupt Guide**: https://langchain-ai.github.io/langgraph/how-tos/human-in-the-loop/
+- **Basic ReAct Agent**: `/graphs/react_agent/AGENTS.md`
 - **Agent Protocol Spec**: https://github.com/AI-Engineer-Foundation/agent-protocol
 
-## 다음 단계
+## Next Steps
 
-1. **open_langgraph.json에 등록**:
+1. **Register in `open_langgraph.json`**:
    ```json
    {
      "graphs": {
@@ -726,10 +726,10 @@ async def human_approval(state: State) -> Command:
    }
    ```
 
-2. **실제 도구 구현**: `tools.py`에서 Tavily API 통합
+2. **Implement Real Tools**: Integrate the Tavily API in `tools.py`.
 
-3. **커스텀 프롬프트**: 도메인에 맞게 `prompts.py` 수정
+3. **Custom Prompts**: Modify `prompts.py` to fit your domain.
 
-4. **UI 구현**: 클라이언트에서 승인/거부 인터페이스 개발
+4. **UI Implementation**: Develop an approval/rejection interface on the client side.
 
-5. **테스트**: 다양한 시나리오로 HITL 플로우 검증
+5. **Testing**: Validate the HITL flow with various scenarios.
