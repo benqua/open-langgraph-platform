@@ -1,16 +1,17 @@
-"""LangGraph 통합 서비스 및 그래프 관리자
+"""LangGraph Integration Service and Graph Manager
 
-이 모듈은 Open LangGraph의 LangGraph 그래프 로딩, 설정 관리, 실행 설정 생성을 담당합니다.
-open_langgraph.json에서 그래프 정의를 읽어 동적으로 로드하고,
-각 그래프에 대한 기본 어시스턴트를 자동으로 생성합니다.
+This module is responsible for loading LangGraph graphs, managing configurations,
+and creating execution settings for Open LangGraph. It dynamically loads graph
+definitions from open_langgraph.json and automatically creates a default
+assistant for each graph.
 
-주요 구성 요소:
-• LangGraphService - 그래프 로딩, 캐싱, 설정 관리
-• inject_user_context() - 사용자 컨텍스트를 LangGraph config에 주입
-• create_thread_config() - 스레드별 실행 설정 생성
-• create_run_config() - 실행별 설정 생성 (관찰성 콜백 포함)
+Key Components:
+- LangGraphService: Handles graph loading, caching, and configuration management.
+- inject_user_context(): Injects user context into the LangGraph config.
+- create_thread_config(): Creates thread-specific execution configurations.
+- create_run_config(): Creates run-specific configurations, including observability callbacks.
 
-사용 예:
+Usage Example:
     from services.langgraph_service import get_langgraph_service
 
     service = get_langgraph_service()
@@ -40,66 +41,66 @@ class GraphDefinition(TypedDict):
 
 
 class LangGraphService:
-    """LangGraph 그래프 로딩 및 설정 관리 서비스
+    """Service for loading and managing LangGraph graphs.
 
-    이 클래스는 open_langgraph.json 설정 파일을 읽어 LangGraph 그래프를 동적으로 로드하고,
-    각 그래프에 대한 기본 어시스턴트를 자동으로 생성합니다.
+    This class reads the open_langgraph.json configuration file to dynamically
+    load LangGraph graphs and automatically creates a default assistant for each graph.
 
-    주요 기능:
-    - 그래프 레지스트리 관리: open_langgraph.json에서 그래프 정의 로드
-    - 그래프 캐싱: 로드된 그래프를 메모리에 캐시하여 성능 향상
-    - 자동 컴파일: 그래프를 Postgres 체크포인터와 함께 컴파일
-    - 기본 어시스턴트 생성: 각 그래프에 대해 deterministic UUID로 어시스턴트 생성
+    Key Features:
+    - Graph Registry Management: Loads graph definitions from open_langgraph.json.
+    - Graph Caching: Caches loaded graphs in memory to improve performance.
+    - Automatic Compilation: Compiles graphs with a Postgres checkpointer.
+    - Default Assistant Creation: Creates an assistant with a deterministic UUID for each graph.
 
-    아키텍처 패턴:
-    - 싱글톤: 애플리케이션 전체에서 단일 인스턴스 사용
-    - 지연 로딩: 그래프를 필요할 때만 로드 및 컴파일
-    - 캐싱: 컴파일된 그래프를 메모리에 저장하여 재사용
+    Architectural Patterns:
+    - Singleton: A single instance is used throughout the application.
+    - Lazy Loading: Graphs are loaded and compiled only when needed.
+    - Caching: Compiled graphs are stored in memory for reuse.
     """
 
     def __init__(self, config_path: str = "open_langgraph.json") -> None:
-        # 설정 파일 경로 (OPEN_LANGGRAPH_CONFIG 환경 변수나 open_langgraph.json으로 오버라이드 가능)
+        # Path to the configuration file (can be overridden by OPEN_LANGGRAPH_CONFIG env var or open_langgraph.json)
         self.config_path = Path(config_path)
         self.config: dict[str, Any] | None = None
-        # 그래프 레지스트리: graph_id -> {file_path, export_name}
+        # Graph registry: graph_id -> {file_path, export_name}
         self._graph_registry: dict[str, GraphDefinition] = {}
-        # 컴파일된 그래프 캐시: graph_id -> CompiledGraph
+        # Compiled graph cache: graph_id -> CompiledGraph
         self._graph_cache: dict[str, CompiledGraph] = {}
 
     async def initialize(self) -> None:
-        """설정 파일을 로드하고 그래프 레지스트리 설정
+        """Load the configuration file and set up the graph registry.
 
-        open_langgraph.json 설정 파일을 찾아 로드한 후 그래프 레지스트리를 초기화합니다.
-        각 그래프에 대해 기본 어시스턴트를 자동으로 생성하여
-        클라이언트가 graph_id만으로 그래프를 실행할 수 있도록 합니다.
+        This method finds and loads the open_langgraph.json configuration file,
+        then initializes the graph registry. It automatically creates a default
+        assistant for each graph, allowing clients to run graphs using only the graph_id.
 
-        설정 파일 해석 우선순위:
-        1) OPEN_LANGGRAPH_CONFIG 환경 변수 (절대 경로 또는 상대 경로)
-        2) 생성자에 명시된 self.config_path (존재하는 경우)
-        3) 현재 작업 디렉토리의 open_langgraph.json
-        4) 현재 작업 디렉토리의 langgraph.json (fallback)
+        Configuration File Resolution Priority:
+        1) OPEN_LANGGRAPH_CONFIG environment variable (absolute or relative path)
+        2) self.config_path specified in the constructor (if it exists)
+        3) open_langgraph.json in the current working directory
+        4) langgraph.json in the current working directory (fallback)
 
-        동작 흐름:
-        1. 설정 파일 경로 해석 (위 우선순위에 따라)
-        2. JSON 파일 로드 및 파싱
-        3. 그래프 레지스트리 초기화 (_load_graph_registry)
-        4. 각 그래프에 대한 기본 어시스턴트 생성 (_ensure_default_assistants)
+        Workflow:
+        1. Resolve the configuration file path (based on the priority above).
+        2. Load and parse the JSON file.
+        3. Initialize the graph registry (_load_graph_registry).
+        4. Create a default assistant for each graph (_ensure_default_assistants).
 
         Raises:
-            ValueError: 설정 파일을 찾을 수 없는 경우
+            ValueError: If the configuration file cannot be found.
         """
-        # 1) 환경 변수 오버라이드 우선
+        # 1) Environment variable override has priority
         env_path = os.getenv("OPEN_LANGGRAPH_CONFIG")
         resolved_path: Path
         if env_path:
             resolved_path = Path(env_path)
-        # 2) 생성자에 제공된 경로가 존재하면 사용
+        # 2) Use the path provided in the constructor if it exists
         elif self.config_path and Path(self.config_path).exists():
             resolved_path = Path(self.config_path)
-        # 3) open_langgraph.json이 현재 디렉토리에 있으면 사용
+        # 3) Use open_langgraph.json in the current directory if it exists
         elif Path("open_langgraph.json").exists():
             resolved_path = Path("open_langgraph.json")
-        # 4) langgraph.json으로 fallback
+        # 4) Fallback to langgraph.json
         else:
             resolved_path = Path("langgraph.json")
 
@@ -109,7 +110,7 @@ class LangGraphService:
                 "OPEN_LANGGRAPH_CONFIG path, ./open_langgraph.json, or ./langgraph.json"
             )
 
-        # 선택된 경로를 저장하여 나중에 참조할 수 있도록 함
+        # Store the selected path for later reference
         self.config_path = resolved_path
 
         with self.config_path.open() as f:
@@ -120,30 +121,30 @@ class LangGraphService:
 
         self.config = cast("dict[str, Any]", loaded_config)
 
-        # 설정 파일에서 그래프 레지스트리 로드
+        # Load the graph registry from the configuration file
         self._load_graph_registry()
 
-        # 각 그래프에 대해 deterministic UUID로 기본 어시스턴트 생성
-        # 클라이언트가 graph_id를 직접 전달할 수 있도록 함
+        # Create a default assistant for each graph with a deterministic UUID
+        # to allow clients to pass graph_id directly.
         await self._ensure_default_assistants()
 
     def _load_graph_registry(self) -> None:
-        """open_langgraph.json에서 그래프 정의를 파싱하여 레지스트리에 등록
+        """Parse graph definitions from open_langgraph.json and register them.
 
-        설정 파일의 "graphs" 섹션을 읽어 각 그래프의 파일 경로와
-        export 이름을 파싱합니다.
+        This method reads the "graphs" section of the configuration file
+        and parses the file path and export name for each graph.
 
-        경로 형식:
+        Path Format:
             "./graphs/weather_agent.py:graph"
-            - 콜론(:) 앞: Python 파일 경로
-            - 콜론(:) 뒤: 모듈에서 export할 변수 이름
+            - Before the colon (:): Path to the Python file
+            - After the colon (:): Name of the variable to export from the module
 
-        동작:
-            각 graph_id를 키로 하여 {file_path, export_name} 딕셔너리를
-            _graph_registry에 저장합니다.
+        Action:
+            Stores a dictionary {file_path, export_name} in _graph_registry
+            for each graph_id.
 
         Raises:
-            ValueError: 경로 형식이 잘못된 경우 (콜론이 없는 경우)
+            ValueError: If the path format is invalid (missing a colon).
         """
         if self.config is None:
             self._graph_registry = {}
@@ -152,7 +153,7 @@ class LangGraphService:
         graphs_config = self.config.get("graphs", {})
 
         for graph_id, graph_path in graphs_config.items():
-            # 경로 형식 파싱: "./graphs/weather_agent.py:graph"
+            # Parse path format: "./graphs/weather_agent.py:graph"
             if ":" not in graph_path:
                 raise ValueError(f"Invalid graph path format: {graph_path}")
 
@@ -163,25 +164,25 @@ class LangGraphService:
             }
 
     async def _ensure_default_assistants(self) -> None:
-        """각 그래프에 대해 deterministic UUID로 기본 어시스턴트 생성
+        """Create a default assistant with a deterministic UUID for each graph.
 
-        이 메서드는 각 그래프마다 하나의 기본 어시스턴트를 생성하여
-        클라이언트가 graph_id만으로 그래프를 실행할 수 있도록 합니다.
+        This method creates one default assistant per graph, allowing clients
+        to run a graph using only its graph_id.
 
-        UUID 생성 방식:
-            uuid5(ASSISTANT_NAMESPACE_UUID, graph_id)를 사용하여
-            동일한 graph_id는 항상 동일한 assistant_id를 생성합니다.
-            이를 통해 서버 재시작 후에도 일관된 ID를 유지합니다.
+        UUID Generation:
+            Uses uuid5(ASSISTANT_NAMESPACE_UUID, graph_id) to ensure that
+            the same graph_id always produces the same assistant_id.
+            This maintains consistent IDs across server restarts.
 
-        멱등성:
-            이미 존재하는 어시스턴트는 스킵하므로 여러 번 호출해도 안전합니다.
+        Idempotency:
+            Skips existing assistants, making it safe to call multiple times.
 
-        생성되는 어시스턴트:
+        Generated Assistant:
         - assistant_id: uuid5(namespace, graph_id)
         - name: graph_id
         - description: "Default assistant for graph '{graph_id}'"
-        - graph_id: 해당 그래프 ID
-        - config: {} (빈 설정)
+        - graph_id: The corresponding graph ID
+        - config: {} (empty config)
         - user_id: "system"
         """
         from sqlalchemy import select
@@ -189,21 +190,21 @@ class LangGraphService:
         from ..core.orm import Assistant as AssistantORM
         from ..core.orm import get_session
 
-        # 고정된 네임스페이스로 graph_id로부터 assistant_id 도출
+        # Derive assistant_id from graph_id using a fixed namespace
         NS = ASSISTANT_NAMESPACE_UUID
         session_gen = get_session()
         session = await anext(session_gen)
         try:
             for graph_id in self._graph_registry:
-                # deterministic UUID 생성
+                # Generate deterministic UUID
                 assistant_id = str(uuid5(NS, graph_id))
                 existing = await session.scalar(
                     select(AssistantORM).where(AssistantORM.assistant_id == assistant_id)
                 )
                 if existing:
-                    # 이미 존재하면 스킵 (멱등성 보장)
+                    # Skip if already exists (ensures idempotency)
                     continue
-                # 새 기본 어시스턴트 생성
+                # Create a new default assistant
                 session.add(
                     AssistantORM(
                         assistant_id=assistant_id,
@@ -219,50 +220,50 @@ class LangGraphService:
             await session.close()
 
     async def get_graph(self, graph_id: str, force_reload: bool = False) -> CompiledGraph:
-        """그래프 ID로 컴파일된 그래프를 가져오기 (캐싱 및 LangGraph 통합)
+        """Get a compiled graph by its ID (with caching and LangGraph integration).
 
-        이 메서드는 요청된 그래프를 로드하고 Postgres 체크포인터와 함께
-        컴파일하여 상태 영속성을 보장합니다.
+        This method loads the requested graph and compiles it with a Postgres
+        checkpointer to ensure state persistence.
 
-        동작 흐름:
-        1. 그래프 레지스트리에서 그래프 존재 확인
-        2. 캐시 확인: force_reload가 아니면 캐시된 그래프 반환
-        3. 파일에서 그래프 로드 (_load_graph_from_file)
-        4. 그래프 컴파일 처리:
-           a. 미컴파일 StateGraph: Postgres 체크포인터로 컴파일
-           b. 이미 컴파일된 그래프: copy()로 체크포인터 주입 시도
-           c. 주입 실패 시: 원본 그래프 사용 (경고 출력)
-        5. 컴파일된 그래프를 캐시에 저장
-        6. 컴파일된 그래프 반환
+        Workflow:
+        1. Check if the graph exists in the registry.
+        2. Check the cache: Return the cached graph unless force_reload is True.
+        3. Load the graph from the file (_load_graph_from_file).
+        4. Handle graph compilation:
+           a. Uncompiled StateGraph: Compile with Postgres checkpointer.
+           b. Already compiled graph: Try to inject the checkpointer with copy().
+           c. If injection fails: Use the original graph (with a warning).
+        5. Store the compiled graph in the cache.
+        6. Return the compiled graph.
 
         Args:
-            graph_id (str): 로드할 그래프 ID (open_langgraph.json에 정의)
-            force_reload (bool): True면 캐시 무시하고 재로드 (기본값: False)
+            graph_id (str): The ID of the graph to load (defined in open_langgraph.json).
+            force_reload (bool): If True, ignore the cache and reload (default: False).
 
         Returns:
-            StateGraph[Any]: Postgres 체크포인터와 함께 컴파일된 그래프
+            StateGraph[Any]: The graph compiled with a Postgres checkpointer.
 
         Raises:
-            ValueError: 그래프를 레지스트리에서 찾을 수 없는 경우
+            ValueError: If the graph is not found in the registry.
 
-        참고:
-            - Postgres 체크포인터: 상태 스냅샷(체크포인트) 저장
-            - Postgres Store: 장기 메모리 및 키-값 저장소
-            - 캐싱: 동일 그래프의 반복 로드 성능 향상
+        Note:
+            - Postgres Checkpointer: Saves state snapshots (checkpoints).
+            - Postgres Store: Long-term memory and key-value storage.
+            - Caching: Improves performance for repeated loads of the same graph.
         """
         if graph_id not in self._graph_registry:
             raise ValueError(f"Graph not found: {graph_id}")
 
-        # 캐시된 그래프가 있고 강제 재로드가 아니면 캐시 반환
+        # If a cached graph exists and not forcing a reload, return it
         if not force_reload and graph_id in self._graph_cache:
             return self._graph_cache[graph_id]
 
         graph_info = self._graph_registry[graph_id]
 
-        # 파일에서 그래프 로드
+        # Load the graph from the file
         base_graph = await self._load_graph_from_file(graph_id, graph_info)
 
-        # 모든 그래프를 Postgres 체크포인터와 함께 컴파일하여 영속성 보장
+        # Compile all graphs with a Postgres checkpointer to ensure persistence
         from ..core.database import db_manager
 
         checkpointer_cm = await db_manager.get_checkpointer()
@@ -289,7 +290,7 @@ class LangGraphService:
         else:
             raise TypeError(f"Graph '{graph_id}' must export a StateGraph or CompiledStateGraph")
 
-        # 컴파일된 그래프를 캐시에 저장
+        # Store the compiled graph in the cache
         self._graph_cache[graph_id] = compiled_graph
 
         return compiled_graph
@@ -328,7 +329,7 @@ class LangGraphService:
         if not file_path.exists():
             raise ValueError(f"Graph file not found: {file_path}")
 
-        # 그래프 모듈 동적 import
+        # Dynamically import the graph module
         spec = importlib.util.spec_from_file_location(f"graphs.{graph_id}", str(file_path.resolve()))
         if spec is None or spec.loader is None:
             raise ValueError(f"Failed to load graph module: {file_path}")
@@ -336,15 +337,15 @@ class LangGraphService:
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
-        # export된 그래프 가져오기
+        # Get the exported graph
         export_name = graph_info["export_name"]
         if not hasattr(module, export_name):
             raise ValueError(f"Graph export not found: {export_name} in {file_path}")
 
         graph = getattr(module, export_name)
 
-        # 그래프는 모듈에서 이미 컴파일되어 있을 수도 있음
-        # 체크포인터/store 주입은 실행 시점에 처리됨
+        # The graph may already be compiled in the module.
+        # Checkpointer/store injection is handled at runtime.
         return graph
 
     def list_graphs(self) -> dict[str, str]:
@@ -402,13 +403,13 @@ _langgraph_service: LangGraphService | None = None
 
 
 def get_langgraph_service() -> LangGraphService:
-    """Return the global LangGraph service instance (singleton)
+    """Return the global LangGraph service instance (singleton).
 
     This function returns the same LangGraphService instance throughout the application,
     sharing the graph cache and configuration.
 
     Returns:
-        LangGraphService: The singleton service instance
+        LangGraphService: The singleton service instance.
     """
     global _langgraph_service
     if _langgraph_service is None:
@@ -417,32 +418,32 @@ def get_langgraph_service() -> LangGraphService:
 
 
 def inject_user_context(user: Any, base_config: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Inject user context into LangGraph config (for multi-tenancy isolation)
+    """Inject user context into LangGraph config (for multi-tenancy isolation).
 
     This function injects user information into LangGraph's configurable section,
     allowing graph nodes to access user data.
 
-    Injected information:
-    - user_id: Unique user identifier (for multi-tenancy isolation)
-    - user_display_name: User's display name
-    - langgraph_auth_user: Full authentication payload (for graph nodes)
+    Injected Information:
+    - user_id: Unique user identifier (for multi-tenancy isolation).
+    - user_display_name: User's display name.
+    - langgraph_auth_user: Full authentication payload (for graph nodes).
 
-    Use cases:
-    - Accessing user info in graph nodes via Runtime[Context]
-    - Filtering data and checking permissions by user
-    - Including user ID in logging and tracing
+    Use Cases:
+    - Accessing user info in graph nodes via Runtime[Context].
+    - Filtering data and checking permissions by user.
+    - Including user ID in logging and tracing.
 
     Args:
-        user: Authenticated user object (with identity, display_name, to_dict())
-        base_config (dict | None): Existing config (default: {})
+        user: Authenticated user object (with identity, display_name, to_dict()).
+        base_config (dict | None): Existing config (default: {}).
 
     Returns:
-        dict: LangGraph config with user context injected
+        dict: LangGraph config with user context injected.
 
     Note:
-        - Does not overwrite existing configurable values (uses setdefault)
-        - Skips user info injection if user is None
-        - Injects minimal identity if to_dict() fails
+        - Does not overwrite existing configurable values (uses setdefault).
+        - Skips user info injection if user is None.
+        - Injects minimal identity if to_dict() fails.
     """
     config: dict[str, Any] = (base_config or {}).copy()
     configurable = config.get("configurable")
@@ -480,26 +481,27 @@ def create_thread_config(
     user: Any,
     additional_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Create LangGraph config for a specific thread (with user context)
+    """Create a LangGraph config for a specific thread (with user context).
 
-    This function creates a per-thread execution config and automatically injects user information.
-    LangGraph uses this config to load the correct thread state from the checkpointer.
+    This function creates a per-thread execution config and automatically injects
+    user information. LangGraph uses this config to load the correct thread
+    state from the checkpointer.
 
     Workflow:
-    1. Create a base config including thread_id
-    2. Merge additional_config into the base config
-    3. Inject user information with inject_user_context()
-    4. Return the completed config
+    1. Create a base config including thread_id.
+    2. Merge additional_config into the base config.
+    3. Inject user information with inject_user_context().
+    4. Return the completed config.
 
     Args:
-        thread_id (str): Unique thread identifier
-        user: Authenticated user object
-        additional_config (dict | None): Additional config (default: None)
+        thread_id (str): Unique thread identifier.
+        user: Authenticated user object.
+        additional_config (dict | None): Additional config (default: None).
 
     Returns:
-        dict: LangGraph config including thread_id and user context
+        dict: LangGraph config including thread_id and user context.
 
-    Usage example:
+    Usage Example:
         config = create_thread_config("thread_123", user)
         state = await graph.aget_state(config)
     """
@@ -518,36 +520,36 @@ def create_run_config(
     additional_config: dict[str, Any] | None = None,
     checkpoint: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Create LangGraph config for a specific run (with observability callbacks)
+    """Create a LangGraph config for a specific run (with observability callbacks).
 
     This function creates a per-run config and automatically adds:
-    - thread_id, run_id: Execution context identifiers
-    - User context: For multi-tenancy isolation and permission management
-    - Observability callbacks: For integration with tracing systems like Langfuse
-    - Checkpoint parameters: For resuming from a specific state
+    - thread_id, run_id: Execution context identifiers.
+    - User context: For multi-tenancy isolation and permission management.
+    - Observability callbacks: For integration with tracing systems like Langfuse.
+    - Checkpoint parameters: For resuming from a specific state.
 
-    Design principle:
+    Design Principle:
         This function is **additive** and does not remove or rename any settings
         provided by the client. It just ensures the configurable dictionary
         exists and merges server-side keys so that graph nodes can rely on them.
 
     Args:
-        run_id (str): Unique run identifier
-        thread_id (str): Unique thread identifier
-        user: Authenticated user object
-        additional_config (dict | None): Additional config provided by the client
-        checkpoint (dict | None): Checkpoint parameters (for resuming from a specific state)
+        run_id (str): Unique run identifier.
+        thread_id (str): Unique thread identifier.
+        user: Authenticated user object.
+        additional_config (dict | None): Additional config provided by the client.
+        checkpoint (dict | None): Checkpoint parameters (for resuming from a specific state).
 
     Returns:
-        dict: The complete LangGraph run config
-            - configurable: thread_id, run_id, user context, checkpoint params
-            - callbacks: Observability callbacks (e.g., for Langfuse)
-            - metadata: Metadata for tracing systems
+        dict: The complete LangGraph run config.
+            - configurable: thread_id, run_id, user context, checkpoint params.
+            - callbacks: Observability callbacks (e.g., for Langfuse).
+            - metadata: Metadata for tracing systems.
 
     Note:
-        - Does not overwrite values already set by the client (uses setdefault)
-        - Automatically adds callbacks and metadata if Langfuse is enabled
-        - Checkpoint parameters are merged into configurable
+        - Does not overwrite values already set by the client (uses setdefault).
+        - Automatically adds callbacks and metadata if Langfuse is enabled.
+        - Checkpoint parameters are merged into configurable.
     """
 
     cfg: dict[str, Any] = deepcopy(additional_config) if additional_config else {}
@@ -589,7 +591,7 @@ def create_run_config(
             ]
 
     # Apply checkpoint parameters if provided
-    if checkpoint and isinstance(checkpoint, dict):
+    if checkpoint:
         cfg["configurable"].update({k: v for k, v in checkpoint.items() if v is not None})
 
     # Finally, inject user context via the existing helper

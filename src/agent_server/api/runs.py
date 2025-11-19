@@ -1,32 +1,33 @@
-"""Agent Protocol 실행(Run) 엔드포인트
+"""Agent Protocol Run Endpoints
 
-이 모듈은 LangGraph 그래프 실행을 관리하는 Agent Protocol API 엔드포인트를 제공합니다.
-실행 생성, 스트리밍, 상태 조회, 취소/중단 등의 기능을 포함하며,
-SSE(Server-Sent Events)를 통한 실시간 이벤트 스트리밍과 PostgreSQL 기반 이벤트 영속화를 지원합니다.
+This module provides Agent Protocol API endpoints for managing LangGraph graph executions.
+It includes features for creating runs, streaming, querying status, and cancellation/interruption,
+supporting real-time event streaming via Server-Sent Events (SSE) and event persistence
+in PostgreSQL.
 
-주요 기능:
-• 실행 생성 및 비동기 백그라운드 처리
-• SSE 스트리밍을 통한 실시간 이벤트 전달
-• Human-in-the-Loop (HITL) 중단점 지원
-• 이벤트 저장 및 재연결 시 재생
-• 멀티 스트림 모드 조정
-• 실행 취소/중단 및 상태 관리
+Key Features:
+- Run creation and asynchronous background processing.
+- Real-time event delivery via SSE streaming.
+- Support for Human-in-the-Loop (HITL) breakpoints.
+- Event storage and replay on reconnection.
+- Coordination of multiple stream modes.
+- Run cancellation/interruption and status management.
 
-엔드포인트 목록:
-• POST /threads/{thread_id}/runs - 실행 생성 (백그라운드)
-• POST /threads/{thread_id}/runs/stream - 실행 생성 및 스트리밍
-• GET /threads/{thread_id}/runs/{run_id} - 실행 조회
-• GET /threads/{thread_id}/runs - 실행 목록 조회
-• PATCH /threads/{thread_id}/runs/{run_id} - 실행 상태 업데이트
-• GET /threads/{thread_id}/runs/{run_id}/join - 실행 완료 대기
-• GET /threads/{thread_id}/runs/{run_id}/stream - 실행 스트리밍
-• POST /threads/{thread_id}/runs/{run_id}/cancel - 실행 취소/중단
-• DELETE /threads/{thread_id}/runs/{run_id} - 실행 삭제
+Endpoint List:
+- POST /threads/{thread_id}/runs - Create a run (background).
+- POST /threads/{thread_id}/runs/stream - Create and stream a run.
+- GET /threads/{thread_id}/runs/{run_id} - Get a run.
+- GET /threads/{thread_id}/runs - List runs.
+- PATCH /threads/{thread_id}/runs/{run_id} - Update a run's status.
+- GET /threads/{thread_id}/runs/{run_id}/join - Wait for a run to complete.
+- GET /threads/{thread_id}/runs/{run_id}/stream - Stream a run.
+- POST /threads/{thread_id}/runs/{run_id}/cancel - Cancel/interrupt a run.
+- DELETE /threads/{thread_id}/runs/{run_id} - Delete a run.
 
-참고:
-- 모든 실행은 PostgreSQL에 영속화됩니다 (ORM을 통한 Run 테이블)
-- 백그라운드 작업은 asyncio.Task로 관리되며 active_runs 딕셔너리에 추적됩니다
-- 이벤트 스트리밍은 streaming_service와 broker를 통해 조정됩니다
+Note:
+- All runs are persisted to PostgreSQL (via the Run table in ORM).
+- Background tasks are managed as asyncio.Tasks and tracked in the active_runs dictionary.
+- Event streaming is coordinated through streaming_service and the broker.
 """
 
 import asyncio
@@ -73,25 +74,26 @@ DEFAULT_STREAM_MODES: list[StreamMode] = ["values"]
 
 
 def map_command_to_langgraph(cmd: dict[str, Any]) -> Command:
-    """API 명령을 LangGraph Command 객체로 변환
+    """Convert an API command to a LangGraph Command object.
 
-    Agent Protocol API에서 받은 명령 딕셔너리를 LangGraph가 인식하는
-    Command 객체로 변환합니다. Human-in-the-Loop 재개 시 사용됩니다.
+    This function transforms a command dictionary from the Agent Protocol API
+    into a Command object recognized by LangGraph. It is used when resuming
+    a Human-in-the-Loop execution.
 
-    동작:
-    1. goto 필드를 리스트로 정규화
-    2. update 필드를 튜플 리스트로 변환
-    3. Send 객체로 서브그래프 노드 전환 처리
-    4. resume 값을 그대로 전달
+    Actions:
+    1. Normalizes the 'goto' field to a list.
+    2. Converts the 'update' field to a list of tuples.
+    3. Handles subgraph node transitions using the Send object.
+    4. Passes the 'resume' value as is.
 
     Args:
-        cmd (dict[str, Any]): API 명령 딕셔너리
-            - goto: 전환할 노드 이름 또는 Send 객체
-            - update: 상태 업데이트 튜플 리스트
-            - resume: 재개 값
+        cmd (dict[str, Any]): The API command dictionary.
+            - goto: The name of the node to transition to, or a Send object.
+            - update: A list of state update tuples.
+            - resume: The value to resume with.
 
     Returns:
-        Command: LangGraph Command 객체
+        Command: The LangGraph Command object.
     """
     goto = cmd.get("goto")
     if goto is not None and not isinstance(goto, list):
@@ -127,15 +129,15 @@ def _normalize_stream_modes(
 
 
 async def set_thread_status(session: AsyncSession, thread_id: str, status: str) -> None:
-    """스레드의 상태 컬럼 업데이트
+    """Update the status column of a thread.
 
-    지정된 스레드의 상태를 데이터베이스에 업데이트합니다.
-    실행 시작/완료/중단 시 스레드 상태를 동기화하는 데 사용됩니다.
+    Updates the status of the specified thread in the database.
+    Used to synchronize the thread's state when a run starts, completes, or is interrupted.
 
     Args:
-        session (AsyncSession): 데이터베이스 세션
-        thread_id (str): 스레드 고유 식별자
-        status (str): 새 상태 ("idle", "busy", "interrupted" 등)
+        session (AsyncSession): The database session.
+        thread_id (str): The unique identifier for the thread.
+        status (str): The new status (e.g., "idle", "busy", "interrupted").
 
     Returns:
         None
@@ -147,28 +149,28 @@ async def set_thread_status(session: AsyncSession, thread_id: str, status: str) 
 
 
 async def update_thread_metadata(session: AsyncSession, thread_id: str, assistant_id: str, graph_id: str) -> None:
-    """스레드 메타데이터에 어시스턴트 및 그래프 정보 업데이트 (DB 방언 독립적)
+    """Update assistant and graph information in thread metadata (DB dialect-independent).
 
-    스레드 메타데이터에 어시스턴트 ID와 그래프 ID를 추가합니다.
-    DB별 JSON concat 연산자를 피하기 위해 read-modify-write 패턴을 사용합니다.
+    Adds the assistant ID and graph ID to the thread's metadata.
+    Uses a read-modify-write pattern to avoid DB-specific JSON concatenation operators.
 
-    동작 흐름:
-    1. 스레드 레코드를 데이터베이스에서 조회
-    2. 기존 메타데이터를 딕셔너리로 변환
-    3. assistant_id와 graph_id 추가
-    4. 업데이트된 메타데이터를 데이터베이스에 저장
+    Workflow:
+    1. Query the thread record from the database.
+    2. Convert the existing metadata to a dictionary.
+    3. Add the assistant_id and graph_id.
+    4. Save the updated metadata to the database.
 
     Args:
-        session (AsyncSession): 데이터베이스 세션
-        thread_id (str): 스레드 고유 식별자
-        assistant_id (str): 어시스턴트 고유 식별자
-        graph_id (str): 그래프 고유 식별자
+        session (AsyncSession): The database session.
+        thread_id (str): The unique identifier for the thread.
+        assistant_id (str): The unique identifier for the assistant.
+        graph_id (str): The unique identifier for the graph.
 
     Returns:
         None
 
     Raises:
-        HTTPException: 스레드를 찾을 수 없는 경우 (404)
+        HTTPException: If the thread is not found (404).
     """
     # DB-specific JSON concat operators are avoided by using a read-modify-write approach
     thread = await session.scalar(select(ThreadORM).where(ThreadORM.thread_id == thread_id))
@@ -192,37 +194,38 @@ async def create_run(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Run:
-    """실행을 생성하고 백그라운드에서 비동기로 처리 (영속화)
+    """Create a run and process it asynchronously in the background (with persistence).
 
-    새로운 실행을 생성하고 백그라운드 asyncio.Task로 실행을 시작합니다.
-    실행 메타데이터는 즉시 PostgreSQL에 저장되며, 실행 결과는 나중에 업데이트됩니다.
+    Creates a new run and starts its execution as a background asyncio.Task.
+    The run metadata is immediately saved to PostgreSQL, and the execution result
+    is updated later.
 
-    동작 흐름:
-    1. resume 명령 검증 (중단된 스레드에서만 재개 가능)
-    2. 어시스턴트 존재 및 그래프 유효성 검증
-    3. 스레드 상태를 "busy"로 변경
-    4. 스레드 메타데이터에 어시스턴트/그래프 정보 추가
-    5. Run 레코드를 "pending" 상태로 데이터베이스에 저장
-    6. 백그라운드 작업(execute_run_async) 시작
-    7. active_runs 딕셔너리에 Task 등록
-    8. Run 객체를 즉시 반환 (실행은 백그라운드에서 계속)
+    Workflow:
+    1. Validate the resume command (can only resume from an interrupted thread).
+    2. Validate the existence of the assistant and the validity of the graph.
+    3. Change the thread status to "busy".
+    4. Add assistant/graph information to the thread metadata.
+    5. Save the Run record to the database with a "pending" status.
+    6. Start the background task (execute_run_async).
+    7. Register the Task in the active_runs dictionary.
+    8. Return the Run object immediately (execution continues in the background).
 
     Args:
-        thread_id (str): 실행을 수행할 스레드 ID
-        request (RunCreate): 실행 생성 요청 (입력, 설정, 명령 등)
-        user (User): 인증된 사용자 (의존성 주입)
-        session (AsyncSession): 데이터베이스 세션 (의존성 주입)
+        thread_id (str): The ID of the thread to perform the run on.
+        request (RunCreate): The run creation request (input, config, command, etc.).
+        user (User): The authenticated user (dependency injection).
+        session (AsyncSession): The database session (dependency injection).
 
     Returns:
-        Run: 생성된 실행 객체 ("pending" 상태)
+        Run: The created run object (in "pending" status).
 
     Raises:
-        HTTPException: 스레드/어시스턴트/그래프를 찾을 수 없거나 잘못된 재개 요청인 경우
+        HTTPException: If the thread/assistant/graph is not found or if the resume request is invalid.
 
-    참고:
-        - 실행은 즉시 반환되지만 백그라운드에서 계속 처리됩니다
-        - 실행 상태는 get_run 엔드포인트로 확인할 수 있습니다
-        - 스트리밍이 필요한 경우 create_and_stream_run을 사용하세요
+    Note:
+        - The run is returned immediately, but processing continues in the background.
+        - The run status can be checked with the get_run endpoint.
+        - For streaming, use create_and_stream_run.
     """
 
     # Validate resume command requirements early
@@ -341,37 +344,38 @@ async def create_and_stream_run(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> StreamingResponse:
-    """실행을 생성하고 SSE로 실시간 스트리밍 (영속화 + SSE)
+    """Create a run and stream it in real-time via SSE (with persistence + SSE).
 
-    새로운 실행을 생성하고 즉시 SSE(Server-Sent Events)로 실시간 이벤트를 스트리밍합니다.
-    백그라운드에서 실행이 진행되며, 발생하는 모든 이벤트가 클라이언트에게 전달됩니다.
+    Creates a new run and immediately streams real-time events via Server-Sent
+    Events (SSE). The execution proceeds in the background, and all generated
+    events are delivered to the client.
 
-    동작 흐름:
-    1. resume 명령 검증 (중단된 스레드에서만 재개 가능)
-    2. 어시스턴트 존재 및 그래프 유효성 검증
-    3. 스레드 상태를 "busy"로 변경
-    4. 스레드 메타데이터에 어시스턴트/그래프 정보 추가
-    5. Run 레코드를 "streaming" 상태로 데이터베이스에 저장
-    6. 백그라운드 작업(execute_run_async) 시작
-    7. active_runs 딕셔너리에 Task 등록
-    8. SSE StreamingResponse 반환 (브로커를 통한 실시간 이벤트 스트리밍)
+    Workflow:
+    1. Validate the resume command (can only resume from an interrupted thread).
+    2. Validate the existence of the assistant and the validity of the graph.
+    3. Change the thread status to "busy".
+    4. Add assistant/graph information to the thread metadata.
+    5. Save the Run record to the database with a "streaming" status.
+    6. Start the background task (execute_run_async).
+    7. Register the Task in the active_runs dictionary.
+    8. Return an SSE StreamingResponse (for real-time event streaming via the broker).
 
     Args:
-        thread_id (str): 실행을 수행할 스레드 ID
-        request (RunCreate): 실행 생성 요청 (입력, 설정, 명령 등)
-        user (User): 인증된 사용자 (의존성 주입)
-        session (AsyncSession): 데이터베이스 세션 (의존성 주입)
+        thread_id (str): The ID of the thread to perform the run on.
+        request (RunCreate): The run creation request (input, config, command, etc.).
+        user (User): The authenticated user (dependency injection).
+        session (AsyncSession): The database session (dependency injection).
 
     Returns:
-        StreamingResponse: SSE 응답 (text/event-stream)
+        StreamingResponse: An SSE response (text/event-stream).
 
     Raises:
-        HTTPException: 스레드/어시스턴트/그래프를 찾을 수 없거나 잘못된 재개 요청인 경우
+        HTTPException: If the thread/assistant/graph is not found or if the resume request is invalid.
 
-    참고:
-        - 클라이언트는 SSE 스트림을 통해 실행 이벤트를 실시간으로 수신합니다
-        - 이벤트는 PostgreSQL에도 저장되어 재연결 시 재생 가능합니다
-        - on_disconnect=cancel 옵션으로 클라이언트 연결 해제 시 실행 취소 가능
+    Note:
+        - The client receives run events in real-time through the SSE stream.
+        - Events are also stored in PostgreSQL, allowing for replay on reconnection.
+        - The `on_disconnect="cancel"` option can be used to cancel the run if the client disconnects.
     """
 
     # Validate resume command requirements early

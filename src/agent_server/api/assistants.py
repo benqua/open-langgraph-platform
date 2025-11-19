@@ -1,38 +1,39 @@
-"""Agent Protocol용 어시스턴트 엔드포인트
+"""Assistant Endpoints for Agent Protocol
 
-이 API는 비즈니스 로직을 서비스 계층(assistant_service.py)으로 분리한
-계층화된 아키텍처 패턴을 따릅니다. 이 패턴은 어시스턴트 API에 최초로 적용되었으며,
-향후 다른 모든 API(runs, threads 등)도 동일한 패턴으로 리팩토링할 예정입니다.
+This API follows a layered architecture pattern, separating business logic into a
+service layer (assistant_service.py). This pattern was first applied to the
+assistant API and will be used to refactor all other APIs (runs, threads, etc.)
+in the future.
 
-아키텍처:
-• API 계층(이 파일): 얇은 FastAPI 라우트 핸들러, 요청/응답 처리
-• 서비스 계층(assistant_service.py): 비즈니스 로직, 검증, 오케스트레이션
+Architecture:
+- API Layer (this file): Thin FastAPI route handlers, request/response processing.
+- Service Layer (assistant_service.py): Business logic, validation, orchestration.
 
-주요 구성 요소:
-• create_assistant - 어시스턴트 생성 (중복 검사 포함)
-• list_assistants - 사용자의 어시스턴트 목록 조회
-• search_assistants - 필터링 및 페이지네이션 검색
-• get_assistant - 특정 어시스턴트 조회
-• update_assistant - 어시스턴트 업데이트 (버전 이력 생성)
-• delete_assistant - 어시스턴트 삭제
-• set_assistant_latest - 특정 버전으로 롤백
-• list_assistant_versions - 버전 이력 조회
-• get_assistant_schemas - 그래프 스키마 추출 (5가지 타입)
-• get_assistant_graph - 그래프 구조 조회 (시각화용)
-• get_assistant_subgraphs - 서브그래프 조회
+Key Components:
+- create_assistant: Create an assistant (with duplicate check).
+- list_assistants: List a user's assistants.
+- search_assistants: Search with filtering and pagination.
+- get_assistant: Get a specific assistant.
+- update_assistant: Update an assistant (creates version history).
+- delete_assistant: Delete an assistant.
+- set_assistant_latest: Roll back to a specific version.
+- list_assistant_versions: List version history.
+- get_assistant_schemas: Extract graph schemas (5 types).
+- get_assistant_graph: Get graph structure (for visualization).
+- get_assistant_subgraphs: Get subgraphs.
 
-사용 예:
+Usage Example:
     from fastapi import FastAPI
     from .api.assistants import router
 
     app = FastAPI()
     app.include_router(router)
 
-    # POST /assistants - 어시스턴트 생성
-    # GET /assistants - 어시스턴트 목록 조회
-    # GET /assistants/{assistant_id} - 특정 어시스턴트 조회
-    # PATCH /assistants/{assistant_id} - 어시스턴트 업데이트
-    # DELETE /assistants/{assistant_id} - 어시스턴트 삭제
+    # POST /assistants - Create an assistant
+    # GET /assistants - List assistants
+    # GET /assistants/{assistant_id} - Get a specific assistant
+    # PATCH /assistants/{assistant_id} - Update an assistant
+    # DELETE /assistants/{assistant_id} - Delete an assistant
 """
 
 from typing import Any
@@ -59,36 +60,36 @@ async def create_assistant(
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
 ) -> Assistant:
-    """새로운 어시스턴트 생성
+    """Create a new assistant.
 
-    open_langgraph.json에 정의된 그래프 ID를 기반으로 어시스턴트를 생성합니다.
-    중복 검사를 수행하며, if_exists 정책에 따라 동작합니다.
+    Creates an assistant based on a graph ID defined in open_langgraph.json.
+    Performs a duplicate check and acts according to the if_exists policy.
 
-    동작 흐름:
-    1. 요청 데이터 검증 (graph_id, config, context)
-    2. 그래프 존재 및 로드 가능 여부 확인
-    3. 중복 어시스턴트 검사 (user_id + graph_id + config 조합)
-    4. 어시스턴트 레코드 생성
-    5. 버전 1 이력 레코드 생성
+    Workflow:
+    1. Validate request data (graph_id, config, context).
+    2. Check if the graph exists and is loadable.
+    3. Check for duplicate assistants (user_id + graph_id + config combination).
+    4. Create the assistant record.
+    5. Create the version 1 history record.
 
     Args:
-        request (AssistantCreate): 어시스턴트 생성 요청 데이터
-            - graph_id: open_langgraph.json에 정의된 그래프 ID (필수)
-            - name: 어시스턴트 이름 (선택, 기본값: "Assistant for {graph_id}")
-            - config: LangGraph 설정 (선택, 기본값: {})
-            - context: 런타임 컨텍스트 (선택, LangGraph 0.6.0+에서 configurable 대체)
-            - metadata: 사용자 정의 메타데이터 (선택)
-            - if_exists: 중복 정책 ("error" 또는 "do_nothing")
-        user (User): 인증된 사용자 (의존성 주입)
-        service (AssistantService): 어시스턴트 서비스 (의존성 주입)
+        request (AssistantCreate): The assistant creation request data.
+            - graph_id: The graph ID defined in open_langgraph.json (required).
+            - name: The assistant's name (optional, defaults to "Assistant for {graph_id}").
+            - config: LangGraph configuration (optional, defaults to {}).
+            - context: Runtime context (optional, replaces configurable in LangGraph 0.6.0+).
+            - metadata: User-defined metadata (optional).
+            - if_exists: Duplicate policy ("error" or "do_nothing").
+        user (User): The authenticated user (dependency injection).
+        service (AssistantService): The assistant service (dependency injection).
 
     Returns:
-        Assistant: 생성된 어시스턴트 (assistant_id, version=1 포함)
+        Assistant: The created assistant (including assistant_id, version=1).
 
     Raises:
-        HTTPException(400): 그래프가 존재하지 않거나 로드 실패
-        HTTPException(400): config와 context를 동시에 지정한 경우
-        HTTPException(409): 동일한 어시스턴트가 이미 존재 (if_exists="error")
+        HTTPException(400): If the graph does not exist or fails to load.
+        HTTPException(400): If both config and context are specified.
+        HTTPException(409): If an identical assistant already exists (if_exists="error").
     """
     return await service.create_assistant(request, user.identity)
 
@@ -98,19 +99,19 @@ async def list_assistants(
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
 ) -> AssistantList:
-    """사용자의 모든 어시스턴트 목록 조회
+    """List all of a user's assistants.
 
-    인증된 사용자가 소유한 모든 어시스턴트를 반환합니다.
-    멀티테넌트 격리를 위해 user_id로 자동 필터링됩니다.
+    Returns all assistants owned by the authenticated user.
+    Automatically filtered by user_id for multi-tenancy isolation.
 
     Args:
-        user (User): 인증된 사용자 (의존성 주입)
-        service (AssistantService): 어시스턴트 서비스 (의존성 주입)
+        user (User): The authenticated user (dependency injection).
+        service (AssistantService): The assistant service (dependency injection).
 
     Returns:
-        AssistantList: 어시스턴트 목록 및 총 개수
-            - assistants: 어시스턴트 배열
-            - total: 전체 개수
+        AssistantList: A list of assistants and the total count.
+            - assistants: An array of assistants.
+            - total: The total number of assistants.
     """
     assistants = await service.list_assistants(user.identity)
     return AssistantList(assistants=assistants, total=len(assistants))
@@ -122,30 +123,30 @@ async def search_assistants(
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
 ) -> list[Assistant]:
-    """필터를 사용하여 어시스턴트 검색
+    """Search for assistants using filters.
 
-    사용자의 어시스턴트를 name, description, graph_id, metadata 등으로 필터링하고
-    페이지네이션을 적용하여 반환합니다.
+    Filters a user's assistants by name, description, graph_id, metadata, etc.,
+    and applies pagination to the results.
 
-    필터 조건:
-    - name: 이름에 대한 부분 일치 검색 (대소문자 무시)
-    - description: 설명에 대한 부분 일치 검색 (대소문자 무시)
-    - graph_id: 그래프 ID 정확히 일치
-    - metadata: JSONB 포함 연산자(@>) 사용하여 메타데이터 필터링
+    Filter Conditions:
+    - name: Partial match search on the name (case-insensitive).
+    - description: Partial match search on the description (case-insensitive).
+    - graph_id: Exact match on the graph ID.
+    - metadata: Filters metadata using the JSONB containment operator (@>).
 
     Args:
-        request (AssistantSearchRequest): 검색 필터 및 페이지네이션 파라미터
-            - name: 이름 필터 (부분 일치)
-            - description: 설명 필터 (부분 일치)
-            - graph_id: 그래프 ID 필터 (정확히 일치)
-            - metadata: 메타데이터 필터 (JSONB @> 연산)
-            - offset: 시작 위치 (기본값: 0)
-            - limit: 최대 개수 (기본값: 20)
-        user (User): 인증된 사용자 (의존성 주입)
-        service (AssistantService): 어시스턴트 서비스 (의존성 주입)
+        request (AssistantSearchRequest): Search filters and pagination parameters.
+            - name: Name filter (partial match).
+            - description: Description filter (partial match).
+            - graph_id: Graph ID filter (exact match).
+            - metadata: Metadata filter (JSONB @> operator).
+            - offset: Starting position (default: 0).
+            - limit: Maximum number of items (default: 20).
+        user (User): The authenticated user (dependency injection).
+        service (AssistantService): The assistant service (dependency injection).
 
     Returns:
-        list[Assistant]: 필터링 및 페이지네이션된 어시스턴트 목록
+        list[Assistant]: A filtered and paginated list of assistants.
     """
     return await service.search_assistants(request, user.identity)
 
@@ -156,22 +157,22 @@ async def count_assistants(
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
 ) -> int:
-    """필터 조건에 맞는 어시스턴트 총 개수 조회
+    """Get the total count of assistants matching the filter criteria.
 
-    search_assistants()와 동일한 필터를 사용하여 전체 개수를 반환합니다.
-    페이지네이션 UI에서 전체 페이지 수를 계산하는 데 사용됩니다.
+    Uses the same filters as search_assistants() to return the total count.
+    Used to calculate the total number of pages in a pagination UI.
 
     Args:
-        request (AssistantSearchRequest): 검색 필터 (offset, limit 제외)
-            - name: 이름 필터 (부분 일치)
-            - description: 설명 필터 (부분 일치)
-            - graph_id: 그래프 ID 필터 (정확히 일치)
-            - metadata: 메타데이터 필터 (JSONB @> 연산)
-        user (User): 인증된 사용자 (의존성 주입)
-        service (AssistantService): 어시스턴트 서비스 (의존성 주입)
+        request (AssistantSearchRequest): Search filters (excluding offset, limit).
+            - name: Name filter (partial match).
+            - description: Description filter (partial match).
+            - graph_id: Graph ID filter (exact match).
+            - metadata: Metadata filter (JSONB @> operator).
+        user (User): The authenticated user (dependency injection).
+        service (AssistantService): The assistant service (dependency injection).
 
     Returns:
-        int: 필터 조건을 만족하는 어시스턴트 총 개수
+        int: The total number of assistants matching the filter criteria.
     """
     return await service.count_assistants(request, user.identity)
 
@@ -182,21 +183,21 @@ async def get_assistant(
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
 ) -> Assistant:
-    """ID로 특정 어시스턴트 조회
+    """Get a specific assistant by ID.
 
-    사용자가 소유하거나 시스템이 제공하는 어시스턴트를 조회합니다.
-    시스템 어시스턴트는 open_langgraph.json에 정의된 그래프의 기본 어시스턴트입니다.
+    Retrieves an assistant owned by the user or provided by the system.
+    System assistants are the default assistants for graphs defined in open_langgraph.json.
 
     Args:
-        assistant_id (str): 어시스턴트 고유 식별자
-        user (User): 인증된 사용자 (의존성 주입)
-        service (AssistantService): 어시스턴트 서비스 (의존성 주입)
+        assistant_id (str): The unique identifier for the assistant.
+        user (User): The authenticated user (dependency injection).
+        service (AssistantService): The assistant service (dependency injection).
 
     Returns:
-        Assistant: 조회된 어시스턴트
+        Assistant: The retrieved assistant.
 
     Raises:
-        HTTPException(404): 어시스턴트를 찾을 수 없음
+        HTTPException(404): If the assistant is not found.
     """
     return await service.get_assistant(assistant_id, user.identity)
 
@@ -208,36 +209,37 @@ async def update_assistant(
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
 ) -> Assistant:
-    """어시스턴트 업데이트 및 버전 이력 생성
+    """Update an assistant and create a version history.
 
-    어시스턴트를 업데이트하고 이전 버전을 assistant_versions 테이블에 보관합니다.
-    버전 번호는 자동으로 증가하며, 사용자는 나중에 특정 버전으로 롤백할 수 있습니다.
+    Updates an assistant and archives the previous version in the assistant_versions table.
+    The version number is automatically incremented, and users can later roll back
+    to a specific version.
 
-    동작 흐름:
-    1. config와 context 동기화
-    2. 기존 어시스턴트 조회
-    3. 최대 버전 번호 조회 후 +1
-    4. 새로운 버전 이력 레코드 생성
-    5. 어시스턴트 메인 레코드 업데이트
+    Workflow:
+    1. Synchronize config and context.
+    2. Query the existing assistant.
+    3. Query the max version number and increment it.
+    4. Create a new version history record.
+    5. Update the main assistant record.
 
     Args:
-        assistant_id (str): 어시스턴트 고유 식별자
-        request (AssistantUpdate): 업데이트할 필드
-            - name: 어시스턴트 이름 (선택)
-            - description: 설명 (선택)
-            - graph_id: 그래프 ID 변경 (선택)
-            - config: LangGraph 설정 (선택)
-            - context: 런타임 컨텍스트 (선택)
-            - metadata: 메타데이터 (선택)
-        user (User): 인증된 사용자 (의존성 주입)
-        service (AssistantService): 어시스턴트 서비스 (의존성 주입)
+        assistant_id (str): The unique identifier for the assistant.
+        request (AssistantUpdate): The fields to update.
+            - name: Assistant name (optional).
+            - description: Description (optional).
+            - graph_id: Change the graph ID (optional).
+            - config: LangGraph configuration (optional).
+            - context: Runtime context (optional).
+            - metadata: Metadata (optional).
+        user (User): The authenticated user (dependency injection).
+        service (AssistantService): The assistant service (dependency injection).
 
     Returns:
-        Assistant: 업데이트된 어시스턴트 (새로운 버전 번호 포함)
+        Assistant: The updated assistant (with the new version number).
 
     Raises:
-        HTTPException(400): config와 context를 동시에 지정한 경우
-        HTTPException(404): 어시스턴트를 찾을 수 없음
+        HTTPException(400): If both config and context are specified.
+        HTTPException(404): If the assistant is not found.
     """
     return await service.update_assistant(assistant_id, request, user.identity)
 
@@ -248,21 +250,22 @@ async def delete_assistant(
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
 ) -> dict[str, str]:
-    """어시스턴트 삭제
+    """Delete an assistant.
 
-    어시스턴트를 영구적으로 삭제합니다.
-    CASCADE 설정으로 인해 연관된 버전 이력, 실행, 이벤트도 함께 삭제됩니다.
+    Permanently deletes an assistant.
+    Due to CASCADE settings, associated version history, runs, and events
+    are also deleted.
 
     Args:
-        assistant_id (str): 어시스턴트 고유 식별자
-        user (User): 인증된 사용자 (의존성 주입)
-        service (AssistantService): 어시스턴트 서비스 (의존성 주입)
+        assistant_id (str): The unique identifier for the assistant.
+        user (User): The authenticated user (dependency injection).
+        service (AssistantService): The assistant service (dependency injection).
 
     Returns:
-        dict: 삭제 완료 상태 {"status": "deleted"}
+        dict: Deletion status {"status": "deleted"}.
 
     Raises:
-        HTTPException(404): 어시스턴트를 찾을 수 없음
+        HTTPException(404): If the assistant is not found.
     """
     return await service.delete_assistant(assistant_id, user.identity)
 
@@ -274,27 +277,28 @@ async def set_assistant_latest(
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
 ) -> Assistant:
-    """특정 버전을 최신 버전으로 설정 (롤백)
+    """Set a specific version as the latest version (rollback).
 
-    assistant_versions 테이블에 저장된 과거 버전을 어시스턴트의 최신 버전으로 설정합니다.
-    이 기능을 통해 사용자는 이전 설정이나 그래프로 롤백할 수 있습니다.
+    Sets a past version stored in the assistant_versions table as the latest
+    version of the assistant. This allows users to roll back to a previous
+    configuration or graph.
 
-    동작 흐름:
-    1. 어시스턴트 존재 여부 확인
-    2. 요청된 버전 존재 여부 확인
-    3. 어시스턴트 메인 레코드를 해당 버전의 내용으로 업데이트
+    Workflow:
+    1. Check if the assistant exists.
+    2. Check if the requested version exists.
+    3. Update the main assistant record with the content of that version.
 
     Args:
-        assistant_id (str): 어시스턴트 고유 식별자
-        version (int): 복원할 버전 번호
-        user (User): 인증된 사용자 (의존성 주입)
-        service (AssistantService): 어시스턴트 서비스 (의존성 주입)
+        assistant_id (str): The unique identifier for the assistant.
+        version (int): The version number to restore.
+        user (User): The authenticated user (dependency injection).
+        service (AssistantService): The assistant service (dependency injection).
 
     Returns:
-        Assistant: 버전이 복원된 어시스턴트
+        Assistant: The assistant with the restored version.
 
     Raises:
-        HTTPException(404): 어시스턴트 또는 버전을 찾을 수 없음
+        HTTPException(404): If the assistant or version is not found.
     """
     return await service.set_assistant_latest(assistant_id, version, user.identity)
 
@@ -305,21 +309,21 @@ async def list_assistant_versions(
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
 ) -> list[Assistant]:
-    """어시스턴트의 모든 버전 이력 조회
+    """List all version history of an assistant.
 
-    assistant_versions 테이블에 저장된 모든 버전을 최신순으로 반환합니다.
-    각 버전은 과거의 설정, 그래프, 메타데이터를 보존하고 있습니다.
+    Returns all versions stored in the assistant_versions table, sorted by most recent.
+    Each version preserves the past configuration, graph, and metadata.
 
     Args:
-        assistant_id (str): 어시스턴트 고유 식별자
-        user (User): 인증된 사용자 (의존성 주입)
-        service (AssistantService): 어시스턴트 서비스 (의존성 주입)
+        assistant_id (str): The unique identifier for the assistant.
+        user (User): The authenticated user (dependency injection).
+        service (AssistantService): The assistant service (dependency injection).
 
     Returns:
-        list[Assistant]: 버전 목록 (최신순 정렬)
+        list[Assistant]: A list of versions (sorted by most recent).
 
     Raises:
-        HTTPException(404): 어시스턴트 또는 버전이 없음
+        HTTPException(404): If the assistant or versions are not found.
     """
     return await service.list_assistant_versions(assistant_id, user.identity)
 
@@ -330,35 +334,36 @@ async def get_assistant_schemas(
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
 ) -> dict[str, Any]:
-    """어시스턴트의 그래프 스키마 조회 (5가지 타입)
+    """Get the graph schemas of an assistant (5 types).
 
-    어시스턴트가 사용하는 LangGraph 그래프의 모든 스키마를 추출하여 반환합니다.
-    클라이언트는 이 정보를 통해 입력 형식, 출력 형식, 상태 구조를 파악할 수 있습니다.
+    Extracts and returns all schemas of the LangGraph graph used by the assistant.
+    Clients can use this information to understand the input format, output format,
+    and state structure.
 
-    반환 스키마:
-    1. input_schema: 그래프 입력 JSON 스키마
-    2. output_schema: 그래프 출력 JSON 스키마
-    3. state_schema: 그래프 상태(채널) JSON 스키마
-    4. config_schema: configurable 설정 JSON 스키마
-    5. context_schema: 런타임 컨텍스트 JSON 스키마
+    Returned Schemas:
+    1. input_schema: JSON schema for the graph input.
+    2. output_schema: JSON schema for the graph output.
+    3. state_schema: JSON schema for the graph state (channels).
+    4. config_schema: JSON schema for the configurable settings.
+    5. context_schema: JSON schema for the runtime context.
 
     Args:
-        assistant_id (str): 어시스턴트 고유 식별자
-        user (User): 인증된 사용자 (의존성 주입)
-        service (AssistantService): 어시스턴트 서비스 (의존성 주입)
+        assistant_id (str): The unique identifier for the assistant.
+        user (User): The authenticated user (dependency injection).
+        service (AssistantService): The assistant service (dependency injection).
 
     Returns:
-        dict: graph_id와 5가지 스키마를 포함한 딕셔너리
-            - graph_id: 그래프 고유 식별자
-            - input_schema: 입력 스키마
-            - output_schema: 출력 스키마
-            - state_schema: 상태 스키마
-            - config_schema: 설정 스키마
-            - context_schema: 컨텍스트 스키마
+        dict: A dictionary containing the graph_id and the 5 schemas.
+            - graph_id: The unique identifier for the graph.
+            - input_schema: The input schema.
+            - output_schema: The output schema.
+            - state_schema: The state schema.
+            - config_schema: The configuration schema.
+            - context_schema: The context schema.
 
     Raises:
-        HTTPException(404): 어시스턴트를 찾을 수 없음
-        HTTPException(400): 스키마 추출 실패
+        HTTPException(404): If the assistant is not found.
+        HTTPException(400): If schema extraction fails.
     """
     return await service.get_assistant_schemas(assistant_id, user.identity)
 
@@ -370,31 +375,32 @@ async def get_assistant_graph(
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
 ) -> dict[str, Any]:
-    """그래프 구조 조회 (시각화용)
+    """Get the graph structure (for visualization).
 
-    어시스턴트의 LangGraph 그래프 구조를 JSON 형식으로 반환합니다.
-    노드, 엣지, 조건부 분기 등 그래프의 전체 구조를 시각화할 수 있습니다.
+    Returns the structure of the assistant's LangGraph graph in JSON format.
+    This allows for visualizing the entire graph structure, including nodes,
+    edges, and conditional branches.
 
-    xray 파라미터:
-    - False (기본값): 최상위 그래프 구조만 반환
-    - True: 모든 서브그래프까지 완전히 펼침
-    - int (양수): 특정 깊이만큼만 펼침
+    xray parameter:
+    - False (default): Returns only the top-level graph structure.
+    - True: Fully expands all subgraphs.
+    - int (positive): Expands to a specific depth.
 
     Args:
-        assistant_id (str): 어시스턴트 고유 식별자
-        xray (bool | int | None): 서브그래프 펼침 옵션 (기본값: False)
-        user (User): 인증된 사용자 (의존성 주입)
-        service (AssistantService): 어시스턴트 서비스 (의존성 주입)
+        assistant_id (str): The unique identifier for the assistant.
+        xray (bool | int | None): Subgraph expansion option (default: False).
+        user (User): The authenticated user (dependency injection).
+        service (AssistantService): The assistant service (dependency injection).
 
     Returns:
-        dict: 그래프 구조 JSON (nodes, edges 포함)
+        dict: Graph structure JSON (including nodes, edges).
 
     Raises:
-        HTTPException(404): 어시스턴트를 찾을 수 없음
-        HTTPException(422): xray 값이 유효하지 않거나 그래프가 시각화를 지원하지 않음
-        HTTPException(400): 그래프 조회 실패
+        HTTPException(404): If the assistant is not found.
+        HTTPException(422): If the xray value is invalid or the graph does not support visualization.
+        HTTPException(400): If graph retrieval fails.
     """
-    # xray가 None이면 기본값 False로 설정 (최상위 그래프만 반환)
+    # If xray is None, set default to False (return only top-level graph)
     xray_value = xray if xray is not None else False
     return await service.get_assistant_graph(assistant_id, xray_value, user.identity)
 
@@ -407,26 +413,26 @@ async def get_assistant_subgraphs(
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
 ) -> dict[str, Any]:
-    """어시스턴트의 서브그래프 조회
+    """Get the subgraphs of an assistant.
 
-    LangGraph 그래프 내에 포함된 서브그래프들의 스키마를 추출합니다.
-    서브그래프는 복잡한 그래프를 모듈화하기 위해 사용되는 중첩된 그래프입니다.
+    Extracts the schemas of subgraphs contained within a LangGraph graph.
+    Subgraphs are nested graphs used to modularize complex workflows.
 
     Args:
-        assistant_id (str): 어시스턴트 고유 식별자
-        recurse (bool): 중첩된 서브그래프도 재귀적으로 조회할지 여부 (기본값: False)
-        namespace (str | None): 특정 네임스페이스의 서브그래프만 조회 (None이면 전체)
-        user (User): 인증된 사용자 (의존성 주입)
-        service (AssistantService): 어시스턴트 서비스 (의존성 주입)
+        assistant_id (str): The unique identifier for the assistant.
+        recurse (bool): Whether to recursively retrieve nested subgraphs (default: False).
+        namespace (str | None): Retrieve only subgraphs in a specific namespace (or all if None).
+        user (User): The authenticated user (dependency injection).
+        service (AssistantService): The assistant service (dependency injection).
 
     Returns:
-        dict: {namespace: schemas} 형태의 서브그래프 스키마 딕셔너리
-            각 스키마는 input_schema, output_schema, state_schema,
-            config_schema, context_schema를 포함합니다.
+        dict: A dictionary of subgraph schemas in the form {namespace: schemas}.
+            Each schema includes input_schema, output_schema, state_schema,
+            config_schema, and context_schema.
 
     Raises:
-        HTTPException(404): 어시스턴트를 찾을 수 없음
-        HTTPException(422): 그래프가 서브그래프를 지원하지 않음
-        HTTPException(400): 서브그래프 조회 실패
+        HTTPException(404): If the assistant is not found.
+        HTTPException(422): If the graph does not support subgraphs.
+        HTTPException(400): If subgraph retrieval fails.
     """
     return await service.get_assistant_subgraphs(assistant_id, namespace, recurse, user.identity)

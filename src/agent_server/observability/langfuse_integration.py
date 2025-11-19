@@ -1,12 +1,13 @@
 import logging
 import os
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 _LANGFUSE_LOGGING_ENABLED = os.getenv("LANGFUSE_LOGGING", "false").lower() == "true"
 
 
-def get_tracing_callbacks() -> list:
+def get_tracing_callbacks() -> list[Any]:
     """
     Initializes and returns a list of tracing callbacks if enabled.
     """
